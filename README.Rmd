@@ -1,0 +1,1 @@
+This project folder contains the data and analysis of scRNA-Seq of 3 psoriasis samples and two samples of another inflammatory skin disease (lupus lupus erythematosus, ...) .
