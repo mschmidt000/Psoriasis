@@ -2,6 +2,8 @@
 ### 20.05.22
 source(here("src", "make-nicknames-for-celltypes.r"))
 
+n_dims_use <- 30
+
 runs_to_integrate <- c(
   "BF-LE-01-KT-PSO_all",  "BF-LE-02-PG-PSO_all",  "BF_LE_03_VC_03_al"
 ) %>% sort()
@@ -10,7 +12,7 @@ runs_list <- map(runs_to_integrate, ~load_seurat_object(data_set_name = .x,  out
 names(runs_list) <- runs_to_integrate
 integr_features <- map( runs_list, ~rownames(.))
 integr_features <- Reduce(intersect, integr_features)
-integr_anchors <- FindIntegrationAnchors(runs_list, dims = 1:30, anchor.features = integr_features)
+integr_anchors <- FindIntegrationAnchors(runs_list, dims = 1:n_dims_use, anchor.features = integr_features)
 
 rm(runs_list)
 
