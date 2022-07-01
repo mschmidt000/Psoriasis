@@ -12,7 +12,7 @@ make_nicknames <- function(cell_types) {
   cell_types <- gsub("mitotic", "mit", cell_types)
   cell_types <- gsub("Migratory", "Mig.", cell_types)
   cell_types <- factor(x = cell_types, levels = c(
-       "KC premit", "KC mit", "KC postmit", "KC CD83+", "Melanocyte", "Stromal Schwann",
+       "KC premit", "KC mit", "KC postmit", "KC CD83+", "Melanocyte", "Schwann", "Stromal Schwann",
        "Fb 1", "Fb 2", "Fb 3", "Pericyte", "VE 1", "VE 2", "VE 3", "LE 1", "LE 2", "ILC", "NK1", "NK2", "NK3",
        "Tc", "Th", "Treg", "Mast cell", "Plasma cell", "Mac 1", "Mac 2", "DC1", "DC2", "LC1", "LC2","LC3", "LC4", "KLF10 LC",
        "Monocyte", "IL23 DC", "pDC", "moDC1", "moDC2", "Mig. cDC"
