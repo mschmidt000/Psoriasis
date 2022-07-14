@@ -11,7 +11,7 @@ source(here("src","seurat-functions.r"))
 # define variables --------------------------------------------------------
 
 runs <- c(
-  "BF-LE-01-KT-PSO_all",  "BF-LE-02-PG-PSO_all",  "BF_LE_03_VC_03_al",  "BF_LE_06_KS_LE_all",  "BF_LE_08_GD_pre_h"
+  "BF-LE-01-KT-PSO_all",  "BF-LE-02-PG-PSO_all",  "BF_LE_03_VC_03_all",  "BF_LE_06_KS_LE_all",  "BF_LE_08_GD_pre_h"
 )
 input_data_path <- file.path("data")
 output_data_path <- file.path("output")

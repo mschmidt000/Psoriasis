@@ -107,6 +107,8 @@ my_liana_dotplot2 <- function(liana_agg, source_groups, target_groups, specifici
     ))
 }
 
+#' Creates filtered dotplots for lymphocytes vs. melanocytes
+#'
 plot_lymphs_vs_mels <- function(liana_obj, seurat_obj, dataset) {
   lymphocytes <- c("Tc", "Th", "Treg", "NK1", "NK2", "NK3", "Plasma cell", "ILC")
   tcells <- c("Tc", "Th", "Treg")

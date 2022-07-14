@@ -8,12 +8,12 @@ create_seurat_object <- function(data_set_name = data_set_name, input_data_folde
   
     pacman::p_load(Seurat, tidyverse, here)
   
-    # seurat_object <- ReadMtx(
-    #   mtx = here(input_data_path, input_data_folder, "matrix.mtx.gz"), features = here(input_data_path, input_data_folder, "features.tsv.gz"),
-    #   cells = here(input_data_path, input_data_folder, "barcodes.tsv.gz")
-    # )
+    seurat_object <- ReadMtx(
+      mtx = here(input_data_path, input_data_folder, "filtered_feature_bc_matrix", "matrix.mtx.gz"), features = here(input_data_path, input_data_folder, "filtered_feature_bc_matrix", "features.tsv.gz"),
+      cells = here(input_data_path, input_data_folder,"filtered_feature_bc_matrix", "barcodes.tsv.gz")
+    )
     
-    seurat_object <- load_and_remove_ambient(seurat_object, data_set_name, input_data_folder, input_data_path)
+    # seurat_object <- load_and_remove_ambient(seurat_object, data_set_name, input_data_folder, input_data_path)
     colnames(seurat_object) <- paste(data_set_name, colnames(seurat_object), sep = "_")
     
     seurat_object <- CreateSeuratObject(counts = as.matrix(seurat_object), min.cells = 1, min.features = 3)
@@ -99,14 +99,15 @@ do_filtering_and_qc <- function(seurat_object = seurat_object, figures_path = fi
     
   # filtering out dead cells
   seurat_object <- subset(seurat_object,
-                                 subset = nCount_RNA < filtering_cutoff_list[["min_nCount_RNA"]] & percent.mt > filtering_cutoff_list[["max_percent.mt"]] |
-                                   nFeature_RNA < filtering_cutoff_list[["min_nFeature_RNA"]] & percent.mt > filtering_cutoff_list[["max_percent.mt"]] |
-                                   percent.mt > filtering_cutoff_list[["max_percent.mt"]] & percent.rps < filtering_cutoff_list[["max_percent.rps"]], invert = TRUE
+                                 subset = nFeature_RNA < (median(seurat_object$nFeature_RNA) + sd(seurat_object$nFeature_RNA)*3)
   )
+
+  seurat_object <- subset(seurat_object,
+                          subset =  percent.mt < 15 )
   
   # filtering out doublets
-  Idents(seurat_object) <- colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]
-  seurat_object <- subset(seurat_object, idents = "Singlet")
+  # Idents(seurat_object) <- colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]
+  # seurat_object <- subset(seurat_object, idents = "Singlet")
   Idents(seurat_object) <- "seurat_clusters"
   
   plot(0, type = "n", axes = FALSE, xlab = "", ylab = "", xlim = c(0, 1))
@@ -332,24 +333,29 @@ transfer_labels <- function(seurat_object = seurat_object, reference_object = re
     reynolds_predictions_exact <- list()
   
     my_anchors <- FindTransferAnchors(
-      reference = seurObj, query = seurat_object,
+      reference = reference_object, query = seurat_object,
       dims = 1:n_dims_use, reference.reduction = "pca"
     )
     
-    predictions <- TransferData(anchorset = my_anchors, refdata = seurObj$Cell_type, dims = 1:n_dims_use)
+    predictions <- TransferData(anchorset = my_anchors, refdata = reference_object$Cell_type, dims = 1:n_dims_use)
     seurat_object$predicted.id.Cell_type <- predictions$predicted.id
     seurat_object <- AddMetaData(seurat_object, metadata = predictions)
     
-    predictions <- TransferData(anchorset = my_anchors, refdata = seurObj$Cell_group, dims = 1:n_dims_use)
+    predictions <- TransferData(anchorset = my_anchors, refdata = reference_object$Cell_group, dims = 1:n_dims_use)
     seurat_object$predicted.id.Cell_group <- predictions$predicted.id
     reynolds_predictions_exact[["Cell_group"]] <- predictions
     
-    predictions <- TransferData(anchorset = my_anchors, refdata = seurObj$Flow_gate, dims = 1:n_dims_use)
+    predictions <- TransferData(anchorset = my_anchors, refdata = reference_object$Flow_gate, dims = 1:n_dims_use)
     seurat_object$predicted.id.Flow_gate <- predictions$predicted.id
     reynolds_predictions_exact[["Flow_gate"]] <- predictions
+    
+    seurat_object$predicted.id.Cell_type_nicknames <- make_nicknames(seurat_object$predicted.id.Cell_type)
+    seurat_object$predicted.id.Cell_type <- factor(seurat_object$predicted.id.Cell_type, levels = sort(unique(seurat_object$predicted.id.Cell_type)))
+    seurat_object$predicted.id.Cell_group <- factor(seurat_object$predicted.id.Cell_group, levels = sort(unique(seurat_object$predicted.id.Cell_group)))
+    seurat_object$predicted.id.Flow_gate <- factor(seurat_object$predicted.id.Flow_gate, levels = sort(unique(seurat_object$predicted.id.Flow_gate)))
   
   
-    interesting_idents_long <- c("predicted.id.Cell_type", "predicted.id.Cell_group", "predicted.id.Flow_gate")
+    interesting_idents_long <- c("predicted.id.Cell_type_nicknames", "predicted.id.Cell_group", "predicted.id.Flow_gate")
     interesting_idents_short <- c("Reynolds 2021 Cell-Type", "Reynolds 2021 Cell-Group", "Reynolds 2021 Flow Gate")
   
     filename <- here(figures_path, paste("03", name_run, "cell-type-predictions.pdf", sep = "_"))
@@ -373,4 +379,63 @@ transfer_labels <- function(seurat_object = seurat_object, reference_object = re
     
     seurat_object
   
+}
+
+#' Finds all differential expressed genes across clusters
+#'
+#' @param seurat_object query object
+#' @param clusters character vector of clusters for which markers should be calculated
+#' @param output_data_path character vector of output data path
+#' @return marker_list
+find_all_marker <- function(seurat_object = seurat_object, clusters = clusters, output_data_path){
+  
+  cluster_marker_all <- list()
+  for(label in seq_along(labels)){
+    
+    Idents(obj_integr) <- clusters
+    cluster_marker <- FindAllMarkers(obj_integr, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25, min.cells.group = min(table(obj_integr$integrated_snn_res.1)))
+    write.csv2(cluster_marker, file = here(output_data_path, paste(clusters, "marker.csv", sep = "_")), row.names = F, quote = F)
+    save(cluster_marker, file=here(output_data_path, paste(clusters, "marker.RData", sep = "_")))
+    cluster_marker_all[[label]] <- cluster_marker
+    
+  }
+}
+
+#' Finds all differential expressed genes per cluster between two seurat objects
+#'
+#' @param seurat_objects named list of 2 seurat objects
+#' @param output_data_path character vector of output data path
+#' @param cluster cluster labels for differentially expression between objects will be calculated
+#' @return marker_list
+find_de_genes <- function(seurat_objects = seurat_objects, cluster = cluster, output_data_path = output_data_path){
+  
+  if(!length(seurat_objects)==2){return("Please provide the function with 2 seurat objects, not more and not less!")}
+  
+  obj1 <- names(seurat_objects)[1]
+  obj2 <- names(seurat_objects)[2]
+  
+  seurat_objects[[obj1]]$temp.ident <- obj1
+  seurat_objects[[obj2]]$temp.ident <- obj2
+  Idents(seurat_objects[[obj1]]) <- cluster
+  Idents(seurat_objects[[obj2]]) <- cluster
+  obj_merged <- merge(seurat_objects[[obj1]], seurat_objects[[obj2]] ) 
+  obj_merged <- NormalizeData(obj_merged)
+  Idents(obj_merged) <- cluster
+  unique_clusters <- intersect(unique(seurat_objects[[obj1]]@meta.data[, cluster]), unique(seurat_objects[[obj2]]@meta.data[, cluster]))
+  DefaultAssay(obj_merged) <- "RNA"
+  marker_list <- list()
+
+  for(clust in unique_clusters){
+
+    cells1 <- colnames(seurat_objects[[obj1]])[grep(clust, Idents(seurat_objects[[obj1]]))]
+    cells2 <- colnames(seurat_objects[[obj2]])[grep(clust, Idents(seurat_objects[[obj2]]))]
+
+    if(length(cells1)>3 & length(cells2) >3){
+
+       marker_list[[clust]]  <- FindMarkers(obj_merged, ident.1=obj1, ident.2=obj2, group.by = "temp.ident", subset.ident = clust)
+     }
+
+   }
+  
+  marker_list
 }

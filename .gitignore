@@ -3,9 +3,11 @@
 *.Rhistory
 *.RData
 *.Ruserdata
+*.html
 data/**
 figs/**
 literature/**
 output/**
 * - Results/**
 renv/**
+omnipathr-log/**

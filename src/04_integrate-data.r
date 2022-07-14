@@ -1,18 +1,19 @@
 ### integrating good quality data sets
 ### 20.05.22
 source(here("src", "make-nicknames-for-celltypes.r"))
+library(clustree)
 
 n_dims_use <- 30
 
 runs_to_integrate <- c(
-  "BF-LE-01-KT-PSO_all",  "BF-LE-02-PG-PSO_all",  "BF_LE_03_VC_03_al"
-) %>% sort()
+  "BF-LE-01-KT-PSO_all",  "BF-LE-02-PG-PSO_all",  "BF_LE_03_VC_03_all"
+)
 
 runs_list <- map(runs_to_integrate, ~load_seurat_object(data_set_name = .x,  output_data_path = output_data_path))
 names(runs_list) <- runs_to_integrate
 integr_features <- map( runs_list, ~rownames(.))
 integr_features <- Reduce(intersect, integr_features)
-integr_anchors <- FindIntegrationAnchors(runs_list, dims = 1:n_dims_use, anchor.features = integr_features)
+integr_anchors <- FindIntegrationAnchors(runs_list, dims = 1:30, anchor.features = integr_features)
 
 rm(runs_list)
 
@@ -42,8 +43,8 @@ interesting_idents_short <- c("Reynolds 21 Cell Type", "Reynolds 21 Cell Group",
 
 color_list <- list()
 for (i in interesting_idents_long) {
-  color_list[[i]] <- randomcoloR::distinctColorPalette(n_distinct(obj_integr@meta.data[, i]))
-  names(color_list[[i]]) <- levels(obj_integr@meta.data[, i])
+  color_list[[i]] <- pals::glasbey(length(unique(obj_integr@meta.data[, i])))
+  names(color_list[[i]]) <- sort(unique(obj_integr@meta.data[, i]))
 }
 filename <- here(output_data_path, "color-list.RData")
 save(color_list, file = filename)
@@ -51,7 +52,6 @@ save(color_list, file = filename)
 filename <- here(figures_path, "04_integrated-dimension-reduction-and-clustering.pdf")
 pdf(filename, height = 7, width = 14)
 DimPlot(obj_integr, reduction = "umap", label = TRUE, group.by = "orig.ident", repel = TRUE) + ggtitle("UMAP colored by Run")
-DimPlot(obj_integr, reduction = "umap", label = FALSE, group.by = "orig.ident", repel = TRUE) + ggtitle("UMAP colored by Run")
 barplot(table(obj_integr@meta.data$orig.ident), main = paste0("Number of Cells per Sample"), col = scales::hue_pal()(length(table(obj_integr@meta.data$orig.ident))))
 my_plot <- DimPlot(obj_integr, reduction = "umap", label = TRUE, group.by = paste0("integrated_snn_res.", c(0.5, 0.6, 0.8, 1)))
 my_plot
