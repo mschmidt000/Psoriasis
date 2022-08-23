@@ -342,6 +342,54 @@ DotPlot(obj_integr, features = genes.bennet, group.by = "predicted.id.Cell_type_
 
 ```
 
+# Interesting interferons (IFNs)
+
+## Interferone (alpha, beta, gamma), TNF-alpha, TGFalpha
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 6 }
+DotPlot(obj_integr, features = c("TNF", "LTA",  "TGFA", "TGFB1"), group.by = "predicted.id.Cell_type_nicknames", dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 11 }
+FeaturePlot(
+  obj_integr, 
+  features = c("TNF", "LTA",  "TGFA", "TGFB1"),
+  ncol = 2,
+  order = TRUE, 
+  label = TRUE, 
+  repel = TRUE, 
+  min.cutoff = "q1",
+  max.cutoff = "q99"
+  )
+
+```
+
+## All TNFs and TGFs
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 15}
+interferons <- c(rownames(obj_integr)[grep("^TNF", rownames(obj_integr))], rownames(obj_integr)[grep("^TGF", rownames(obj_integr))])
+
+DotPlot(obj_integr, features = interferons, group.by = "predicted.id.Cell_type_nicknames", dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+
+# S100A1 proteins
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 7, fig.width = 10 }
+DotPlot(obj_integr, features = rownames(obj_integr)[grep("S100A1", rownames(obj_integr))], group.by = "predicted.id.Cell_type_nicknames", dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
 
 # *IL-14 (TXLNA)* and *IL-29 (IFNL1)*
 

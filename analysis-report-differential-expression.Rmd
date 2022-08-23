@@ -57,8 +57,8 @@ load(here(output_data_path, "integr-vs-08_marker.RData"))
 
 
 ```{r, include=FALSE,  fig.width = 12, fig.height = 5}
-# de_integr_reynolds <- find_de_genes(list("obj_integr" = obj_integr, "obj_reynolds" = obj_reynolds), "predicted.id.Cell_type_nicknames", output_data_path)
-# save(de_integr_reynolds, file = here(output_data_path, "integr-vs-reynolds_marker.RData"))
+de_integr_reynolds <- find_de_genes(list("obj_integr" = obj_integr, "obj_reynolds" = obj_reynolds), "predicted.id.Cell_type_nicknames", output_data_path)
+save(de_integr_reynolds, file = here(output_data_path, "integr-vs-reynolds_marker.RData"))
 filename <- here(output_data_path, "integr-vs-reynolds_marker.xlsx")
 de_integr_reynolds_sign <- map(de_integr_reynolds,~filter(., p_val_adj <0.05))
 wb <- createWorkbook()
@@ -72,36 +72,36 @@ for(i in seq_along(de_integr_reynolds))
 }
 saveWorkbook(wb, filename)
 gc()
-# de_integr_06 <- find_de_genes(list("obj_integr" = obj_integr, "obj_06" = obj_06), "predicted.id.Cell_type_nicknames", output_data_path)
-# save(de_integr_06, file = here(output_data_path, "integr-vs-06_marker.RData"))
-# filename <- here(output_data_path, "integr-vs-06_marker.xlsx")
-# de_integr_06_sign <- map(de_integr_06,~filter(., p_val_adj <0.05))
-# wb <- createWorkbook()
-# for(i in seq_along(de_integr_06))
-# {
-#   gc()
-#   message("Creating sheet", i)
-#   sheet <- createSheet(wb, sheetName = names(de_integr_06)[i])
-#   message("Adding data frame", i)
-#   addDataFrame(de_integr_06[[i]], sheet)
-# }
-# saveWorkbook(wb, filename)
-# gc()
-# de_integr_08 <- find_de_genes(list("obj_integr" = obj_integr, "obj_08" = obj_08), "predicted.id.Cell_type_nicknames", output_data_path)
-# save(de_integr_08, file = here(output_data_path, "integr-vs-08_marker.RData"))
-# filename <- here(output_data_path, "integr-vs-08_marker.xlsx")
-# de_integr_08_sign <- map(de_integr_08,~filter(., p_val_adj <0.05))
-# wb <- createWorkbook()
-# for(i in seq_along(de_integr_08))
-# {
-#     gc()
-#   message("Creating sheet", i)
-#   sheet <- createSheet(wb, sheetName = names(de_integr_08)[i])
-#   message("Adding data frame", i)
-#   addDataFrame(de_integr_08[[i]], sheet)
-# }
-# saveWorkbook(wb, filename)
-# gc()
+de_integr_06 <- find_de_genes(list("obj_integr" = obj_integr, "obj_06" = obj_06), "predicted.id.Cell_type_nicknames", output_data_path)
+save(de_integr_06, file = here(output_data_path, "integr-vs-06_marker.RData"))
+filename <- here(output_data_path, "integr-vs-06_marker.xlsx")
+de_integr_06_sign <- map(de_integr_06,~filter(., p_val_adj <0.05))
+wb <- createWorkbook()
+for(i in seq_along(de_integr_06))
+{
+  gc()
+  message("Creating sheet", i)
+  sheet <- createSheet(wb, sheetName = names(de_integr_06)[i])
+  message("Adding data frame", i)
+  addDataFrame(de_integr_06[[i]], sheet)
+}
+saveWorkbook(wb, filename)
+gc()
+de_integr_08 <- find_de_genes(list("obj_integr" = obj_integr, "obj_08" = obj_08), "predicted.id.Cell_type_nicknames", output_data_path)
+save(de_integr_08, file = here(output_data_path, "integr-vs-08_marker.RData"))
+filename <- here(output_data_path, "integr-vs-08_marker.xlsx")
+de_integr_08_sign <- map(de_integr_08,~filter(., p_val_adj <0.05))
+wb <- createWorkbook()
+for(i in seq_along(de_integr_08))
+{
+    gc()
+  message("Creating sheet", i)
+  sheet <- createSheet(wb, sheetName = names(de_integr_08)[i])
+  message("Adding data frame", i)
+  addDataFrame(de_integr_08[[i]], sheet)
+}
+saveWorkbook(wb, filename)
+gc()
 
 ```
 # {.tabset}
