@@ -20,7 +20,7 @@ create_seurat_object <- function(data_set_name = data_set_name, input_data_folde
     seurat_object[["percent.mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
     seurat_object[["percent.rps"]] <- PercentageFeatureSet(seurat_object, pattern = "^RPS")
     seurat_object@meta.data$orig.ident <- data_set_name
-    seurat_object <- find_doublets(seurat_object)
+    # seurat_object <- find_doublets(seurat_object)
     gc()
     seurat_object
    
@@ -37,6 +37,18 @@ do_qc <- function(seurat_object = seurat_object, figures_path = figures_path){
   name_run <- unique(seurat_object$orig.ident)
   pacman::p_load(Seurat, tidyverse, here)
   
+  n_dims_use <- 30
+  
+  perplexity <- sqrt(ncol(seurat_object@assays$RNA@counts))
+  seurat_object <- seurat_object %>%
+    NormalizeData() %>%
+    FindVariableFeatures() %>%
+    ScaleData() %>%
+    RunPCA() %>%
+    RunUMAP(dims = 1:n_dims_use) %>%
+    FindNeighbors(dims = 1:n_dims_use) %>%
+    FindClusters(resolution = 1.2)
+  
   filename <- here(figures_path, paste("01", name_run, "quality-check.pdf", sep = "_"))
   pdf(filename, 29.7 / 2.54, 21 / 2.54, useDingbats = FALSE)
   
@@ -52,7 +64,7 @@ do_qc <- function(seurat_object = seurat_object, figures_path = figures_path){
     geom_point(aes(x = nCount_RNA, y = nFeature_RNA, colour = percent.rps)) +
     scale_color_gradient(low = "black", high = "green")
   print(p2)
-  print(FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "nFeature_RNA" , group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
+  # print(FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "nFeature_RNA" , group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
   print(FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "percent.mt"))
   print(FeatureScatter(seurat_object, feature1 = "nFeature_RNA", feature2 = "percent.mt"))
   print(FeatureScatter(seurat_object, feature1 = "percent.rps", feature2 = "percent.mt"))
@@ -66,7 +78,7 @@ do_qc <- function(seurat_object = seurat_object, figures_path = figures_path){
                    features = c("percent.mt", "percent.rps", "nCount_RNA", "nFeature_RNA")
   ))
   plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = c("seurat_clusters")))
-  plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
+  # plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
   
   p3 <- VariableFeaturePlot(seurat_object)
   p4 <- LabelPoints(plot = p3, points = head(VariableFeatures(seurat_object), 10), repel = TRUE)
@@ -91,13 +103,13 @@ do_filtering_and_qc <- function(seurat_object = seurat_object, figures_path = fi
   
   # seurat_object <- remove_ambient_expression(seurat_object, name_run, input_data_folder, input_data_path)
   
-  filtering_cutoff_list <- list(
-    "min_nCount_RNA" = quantile(seurat_object$nCount_RNA, 0.1),
-    "min_nFeature_RNA" = quantile(seurat_object$nFeature_RNA, 0.1),
-    "max_percent.mt" = 15
-  )
+  # filtering_cutoff_list <- list(
+  #   "min_nCount_RNA" = quantile(seurat_object$nCount_RNA, 0.1),
+  #   "min_nFeature_RNA" = quantile(seurat_object$nFeature_RNA, 0.1),
+  #   "max_percent.mt" = 15
+  # )
     
-  # filtering out dead cells
+  # filtering out doublets
   seurat_object <- subset(seurat_object,
                                  subset = nFeature_RNA < (median(seurat_object$nFeature_RNA) + sd(seurat_object$nFeature_RNA)*3)
   )
@@ -122,7 +134,7 @@ do_filtering_and_qc <- function(seurat_object = seurat_object, figures_path = fi
     geom_point(aes(x = nCount_RNA, y = nFeature_RNA, colour = percent.rps)) +
     scale_color_gradient(low = "black", high = "green")
   print(p2)
-  print(FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
+  # print(FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
   print(FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "percent.mt"))
   print(FeatureScatter(seurat_object, feature1 = "nFeature_RNA", feature2 = "percent.mt"))
   print(FeatureScatter(seurat_object, feature1 = "percent.rps", feature2 = "percent.mt"))
@@ -136,7 +148,7 @@ do_filtering_and_qc <- function(seurat_object = seurat_object, figures_path = fi
                    features = c("percent.mt", "percent.rps", "nCount_RNA", "nFeature_RNA")
   ))
   plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = c("seurat_clusters")))
-  plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
+  # plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
   
   seurat_object <- NormalizeData(seurat_object) %>%
     FindVariableFeatures(do.plot = T, verbose = F) %>%
@@ -306,7 +318,7 @@ reduce_dimension_and_cluster <- function(seurat_object = seurat_object, figures_
   plot(DimPlot(seurat_object, reduction = "tsne", label = TRUE, group.by = c("seurat_clusters", "Phase")))
   plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = c("seurat_clusters", "Phase")))
   clustree(x = seurat_object@meta.data, prefix = "RNA_snn_res.") 
-  plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
+  # plot(DimPlot(seurat_object, reduction = "umap", label = TRUE, group.by = colnames(seurat_object@meta.data)[grep("DF.class",colnames(seurat_object@meta.data))]))
 
 
   dev.off()
@@ -438,4 +450,83 @@ find_de_genes <- function(seurat_objects = seurat_objects, cluster = cluster, ou
    }
   
   marker_list
+}
+
+
+#' Classify cells by Module Scores of a given Pattern
+#'
+#' @param seurat_object query object
+#' @param name pattern which is in the name of the gene sets / module scores
+#' @param set.ident setting idents by the created classification
+#' @return seurat object
+classify_cells <- function(
+    object,
+    name,
+    ctrl = NULL,
+    set.ident = FALSE,
+    ...
+) {
+  if (is.null(x = ctrl)) {
+    ctrl <- min(vapply(X = features, FUN = length, FUN.VALUE = numeric(length = 1)))
+  }
+  # object.cc <- AddModuleScore(
+  #   object = object,
+  #   features = features,
+  #   name = name,
+  #   ctrl = ctrl,
+  #   search = TRUE
+  # )
+  cc.columns <- grep(pattern = name, x = colnames(x = object[[]]), value = TRUE)
+  cc.scores <- object[[cc.columns]]
+  CheckGC()
+  assignments <- apply(
+    X = cc.scores,
+    MARGIN = 1,
+    FUN = function(scores, names_scores = names(scores)) {
+      if (all(scores < 0)) {
+        return("No")
+      } else {
+        if (length(which(x = scores == max(scores))) > 1) {
+          return('Undecided')
+        } else {
+          return(gsub('[[:digit:]]+', '',names_scores[which(x = scores == max(scores))]))
+        }
+      }
+    }
+  )
+  cc.scores_new <- merge(x = cc.scores, y = data.frame(assignments), by = 0)
+  colnames(x = cc.scores_new) <- c('rownames', colnames(cc.scores), paste(name, "classification", sep = "_"))
+  rownames(x = cc.scores_new) <- cc.scores_new$rownames
+  cc.scores_new <- cc.scores_new[, -1]
+  object[[colnames(cc.scores_new)]] <- cc.scores_new
+  if (set.ident) {
+    object[['old.ident']] <- Idents(object = object)
+    Idents(object = object) <- paste(name, "classification", sep = "_")
+  }
+  return(object)
+}
+
+#' Annotate seurat clusters by reference clusters
+#'
+#' @param seurat_object query object
+#' @param reference_clusters reference clusters by which the seurat clusters will be annotated
+#' @return seurat object
+annotate_clusters <- function(
+    object,
+    reference_clusters
+) {
+  tab <- table(object$seurat_clusters, object@meta.data[,reference_clusters])
+  CheckGC()
+  annotated_cluster <- apply(
+    X = tab,
+    MARGIN = 1,
+    FUN = function(cluster) {
+      if (all(cluster == 0)) {
+        return("No")
+      } else {
+        return(names(cluster)[which(x = cluster == max(cluster))])
+      }
+    }
+  )
+  return(annotated_cluster)
 }
