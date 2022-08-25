@@ -510,7 +510,7 @@ classify_cells <- function(
 #'
 #' @param seurat_object query object
 #' @param reference_clusters reference clusters by which the seurat clusters will be annotated
-#' @return seurat object
+#' @return annotated clusters
 annotate_clusters <- function(
     object,
     reference_clusters

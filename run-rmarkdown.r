@@ -1,7 +1,7 @@
 library(here)
 
 runs <- c(
-  "BF-LE-01-KT-PSO_all",  "BF-LE-02-PG-PSO_all", "BF_LE_03_VC_03_all",  "BF_LE_06_KS_LE_all",  "BF_LE_08_GD_pre_h"
+  "BF-LE-01-KT-PSO_all",  "BF-LE-02-PG-PSO_all",  "BF_LE_03_VC_03_all", "BF_LE_06_KS_LE_all",  "BF_LE_08_GD_pre_h"
 )
 
 # rmarkdown::render(

@@ -6,19 +6,20 @@
 
 pacman::p_load(Seurat, tidyverse)
 source(here("src","seurat-functions.r"))
+source(here("src","paths.r"))
 
 
 # define variables --------------------------------------------------------
 
 runs <- c(
-  "BF-LE-01-KT-PSO_all",  "BF-LE-02-PG-PSO_all",  "BF_LE_03_VC_03_all",  "BF_LE_06_KS_LE_all",  "BF_LE_08_GD_pre_h"
+  "BF_LE_06_KS_LE_all",  "BF_LE_08_GD_pre_h"
 )
 input_data_path <- file.path("data")
 output_data_path <- file.path("output")
 figures_path <- file.path("figs")
 literature_path <- "literature"
 
-paths <- list.files(input_data_path, full.names = FALSE)
+paths <- runs
 
 
 # preprocess, filter and plot ---------------------------------------------

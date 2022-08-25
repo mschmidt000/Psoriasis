@@ -43,8 +43,8 @@ interesting_idents_short <- c("Reynolds 21 Cell Type", "Reynolds 21 Cell Group",
 
 color_list <- list()
 for (i in interesting_idents_long) {
-  color_list[[i]] <- pals::glasbey(length(unique(obj_integr@meta.data[, i])))
-  names(color_list[[i]]) <- sort(unique(obj_integr@meta.data[, i]))
+  color_list[[i]] <- pals::glasbey(length(levels(obj_integr@meta.data[, i])))
+  names(color_list[[i]]) <- levels(obj_integr@meta.data[, i])
 }
 filename <- here(output_data_path, "color-list.RData")
 save(color_list, file = filename)
