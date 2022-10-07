@@ -1,8 +1,10 @@
-### run opossom on melanocyte cells
-### 26.05.22
-library(scrat)
+### run opossom on all data sets
+### 13.09.2022
+library(oposSOM)
 library(here)
+library(Seurat)
 source(here("src","paths.r"))
+source(here("src","opossom-functions.r"))
 source(here("src","seurat-functions.r"))
 
 

@@ -1,6 +1,12 @@
 ### reduce dimension and find clusters
 ### 19.05.22
 
+# load packages and source code -------------------------------------------
+
+pacman::p_load(Seurat, tidyverse)
+source(here("src","seurat-functions.r"))
+source(here("src","paths.r"))
+
 # reduce dimension and plot -----------------------------------------------
 
 for(i in seq_along(runs)){

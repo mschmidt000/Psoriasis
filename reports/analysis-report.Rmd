@@ -19,16 +19,11 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 ```{r, echo=FALSE, include=FALSE}
 pacman::p_load(Seurat, tidyverse, here, ggplot2, pals, patchwork, flextable)
 source(here("src","seurat-functions.r"))
-source(here("src","make-nicknames-for-celltypes.r"))
 source(here("src","liana-functions.r"))
 output_data_path <- "output"
 
 filename <- here(output_data_path, "integrated-seurat-obj.RData")
 load(filename)
-table(obj_integr$predicted.id.Cell_type_nicknames)
-# obj_integr$predicted.id.Cell_type_nicknames <- make_nicknames(obj_integr$predicted.id.Cell_type)
-table(make_nicknames(obj_integr$predicted.id.Cell_type))
-
 filename <- here(output_data_path, "color-list.RData")
 load(filename)  
 filename <- here(output_data_path, "bennets-skin-marker.RData")
@@ -51,12 +46,9 @@ seurat_cluster_data <- data.frame(
     table(obj_integr@meta.data[, "seurat_clusters"]),
     "color" = seurat_colors
 )
-
-celltype_colors <- randomcoloR::distinctColorPalette(length(levels(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])))
-names(celltype_colors) <- levels(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])
-celltype_colors[names(color_list[["predicted.id.Cell_type_nicknames"]])] <- color_list[["predicted.id.Cell_type_nicknames"]]
+celltype_colors <- color_list[["predicted.id.Cell_type_nicknames"]]
 celltype_cluster_data <- data.frame(
-    table(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])[levels(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])],
+    table(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])[which(table(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])>0)],
     "color" = celltype_colors
 )
 ```
@@ -67,10 +59,8 @@ celltype_cluster_data <- data.frame(
 
 We did quality check of all 3 Samples. We removed cells with high mitochondrial expression (percent.mt) and many counts/genes (nFeature_RNA, nCount_RNA) by thresholding (\> 15% percent.mt, \< median + 3sd nCount/nFeatures ).```
 
-```{r, echo=FALSE,  fig.width = 20, fig.height = 11}
-Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
-p1 <- VlnPlot(obj_integr, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), cols = celltype_colors) &
-  scale_x_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames))
+```{r, echo=FALSE,  fig.width = 16, fig.height = 11}
+p1 <- VlnPlot(obj_integr, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by = "predicted.id.Cell_type_nicknames", cols = celltype_colors)
 p2 <- VlnPlot(obj_integr, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by = "seurat_clusters")
 
 p1 / p2
@@ -89,7 +79,8 @@ ft <- continuous_summary(
   obj_integr@meta.data,
   columns = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rps"),
   by = "orig.ident",
-  hide_grouplabel = TRUE
+  hide_grouplabel = TRUE,
+  digits = 3
 )
 ft <-  set_caption(ft, caption = "Statistics of number of counts, features, mitochondrial expression and ribosomal expression")
 ft
@@ -140,17 +131,16 @@ p1 + p2
 
 We projected celltypes from a healthy scRNA-Seq dataset (@Reynolds2021) onto our dataset.
 
-```{r, echo=FALSE,  fig.width = 12, fig.height = 6}
+```{r, echo=FALSE,  fig.width = 10, fig.height = 5}
 
 Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
 
 p1 <- DimPlot(obj_integr, reduction = "umap", group.by = "predicted.id.Cell_type_nicknames", cols = celltype_colors) + theme(legend.position = "none", legend.text = element_text(size = 7)) + ggtitle("")
 
-p2 <- ggplot(obj_integr@meta.data, aes(x = predicted.id.Cell_type_nicknames, fill = predicted.id.Cell_type_nicknames)) +
-  geom_bar() +
+p2 <- ggplot(celltype_cluster_data, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity") +
   theme_minimal() +
   scale_fill_manual(values = celltype_colors) +
-  scale_x_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames)) +
   coord_flip() +
   theme(
     legend.position = "none",
@@ -165,19 +155,17 @@ p1 + p2
 To verify this further, we examined some canonical cell type markers for the specific skin and immune cell populations.
 
 ```{r, echo=FALSE, fig.align = "center", fig.height = 10, fig.width = 15 }
-DotPlot(obj_integr, features = skin_marker, dot.scale = 6, idents = levels(Idents(obj_integr))) +
+DotPlot(obj_integr, features = skin_marker, group.by = "predicted.id.Cell_type_nicknames", dot.scale = 6) +
   scale_color_gradient2(high = "red", low = "blue") +
   theme(
     axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
-  ) +
-  scale_y_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames))
+  )
 ```
 We calculated positive markers via differential expression, which further verify and define our predicted clusters.
 
 ```{r, echo=FALSE, fig.align = "center", fig.height = 20, fig.width = 20 }
 Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
-DefaultAssay(obj_integr) <- "RNA"
-cluster_marker_defaultRNA <- FindAllMarkers(obj_integr, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+# cluster_marker <- FindAllMarkers(obj_integr, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
 # save(cluster_marker, file = here(output_data_path, "predicted.id.Cell_type_nicknames_marker.RData"))
 top5_predicted.id.Cell_type <- cluster_marker %>%
   group_by(cluster) %>%

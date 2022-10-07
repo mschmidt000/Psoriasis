@@ -1,0 +1,846 @@
+---
+title: "Psoriasis-analysis update"
+subtitle: "scRNA-seq data of the samples BF-LE-01-KT-PSO_all, BF-LE-02-PG-PSO_all, and BF_LE_03_VC_03_all"
+author: "Maria Schmidt"
+affiliation: "IZBI, Interdisciplinary Centre for Bioinformatics, Leipzig University, Germany"
+date: 2022-08-26
+format:
+  html:
+    toc: true
+    number-sections: false
+    code-fold: true
+  pptx: default
+  pdf: default
+execute: 
+  echo: true
+  error: false
+  warning: false
+link-citations: true
+bibliography: "library.bib"
+self-contained: true
+---
+  
+  
+  
+```{r, include=FALSE}
+#| label: load-data
+
+pacman::p_load(Seurat, tidyverse, here, ggplot2, pals, patchwork, flextable, circlize)
+source(here("src","seurat-functions.r"))
+source(here("src","make-nicknames-for-celltypes.r"))
+source(here("src","liana-functions.r"))
+source(here("src","paths.r"))
+output_data_path <- "output"
+
+filename <- here(output_data_path, "integrated-seurat-obj.RData")
+load(filename)
+filename <- here(output_data_path, "color-list.RData")
+load(filename)  
+filename <- here(output_data_path, "bennets-skin-marker.RData")
+load(filename)
+filename <- here(output_data_path, "predicted.id.Cell_type_nicknames_marker.RData")
+load(filename)
+filename <- here(output_data_path, "predicted.id.Cell_type_nicknames_marker_defaultRNA.RData")
+load(filename)
+filename <- here(output_data_path, "seurat_cluster_marker_defaultRNA.RData")
+load(filename)
+filename <- here(output_data_path, "reynolds-skin-marker.RData")
+load(filename) 
+filename <- here(output_data_path, "interleukins.RData")
+load(filename)
+filename <- here(output_data_path, "integrated-liana-obj.RData")
+load(filename)
+
+seurat_colors <- scales::hue_pal()(length(table(obj_integr@meta.data[, "seurat_clusters"])))
+seurat_cluster_data <- data.frame(
+  table(obj_integr@meta.data[, "seurat_clusters"]),
+  "color" = seurat_colors
+)
+
+celltype_colors <- randomcoloR::distinctColorPalette(length(levels(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])))
+names(celltype_colors) <- levels(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])
+celltype_colors[names(color_list[["predicted.id.Cell_type_nicknames"]])] <- color_list[["predicted.id.Cell_type_nicknames"]]
+celltype_cluster_data <- data.frame(
+  table(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])[levels(obj_integr@meta.data[, "predicted.id.Cell_type_nicknames"])],
+  "color" = celltype_colors
+)
+```
+# Preprocessing, data integration and dimension reduction
+
+## Quality check
+
+We did quality check of all 3 Samples. We removed cells with high mitochondrial expression (percent.mt) and many counts/genes (nFeature_RNA, nCount_RNA) by thresholding (\> 15% percent.mt, \< median + 3sd nCount/nFeatures ).\`\`\`
+
+```{r,  fig.width = 20, fig.height = 11}
+#| label: quality-check_violin-plots
+
+Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
+p1 <- VlnPlot(obj_integr, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), cols = celltype_colors) &
+  scale_x_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames))
+p2 <- VlnPlot(obj_integr, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by = "seurat_clusters_annotated")
+
+p1 / p2
+```
+
+```{r, fig.width = 7, fig.height = 5}
+#| label: quality-check_further-plots
+
+VlnPlot(obj_integr, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by = "orig.ident")
+FeatureScatter(obj_integr, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = "orig.ident")
+ggplot(obj_integr@meta.data) +
+  geom_point(aes(x = nCount_RNA, y = nFeature_RNA, colour = percent.mt)) +
+  theme_minimal()
+```
+
+```{r, fig.width = 7, fig.height = 7}
+
+ft <- flextable::continuous_summary(
+  obj_integr@meta.data,
+  columns = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rps"),
+  by = "orig.ident",
+  hide_grouplabel = TRUE
+)
+ft <-  set_caption(ft, caption = "Statistics of number of counts, features, mitochondrial expression and ribosomal expression")
+ft
+```
+
+## Data integration and dimension reduction
+
+We integrated the 3 datasets into one, reduced Dimension with PCA and visualized results with UMAP.
+
+```{r, fig.width = 10, fig.height = 5}
+#| label: umap_experiment_percent-mt
+p1 <- DimPlot(obj_integr, reduction = "umap", label = FALSE, group.by = "orig.ident") + theme(legend.position="bottom")
+p2 <- FeaturePlot(obj_integr, features = "percent.mt")
+
+p1 + p2 
+```
+
+## Cell-cycle scoring
+
+We assigned each cell a cell-cycle score, based on its expression of G2/M and S phase markers and predicted classification of each cell in either G2M, S or G1 phase.
+
+```{r, fig.width = 6, fig.height = 5}
+#| label: umap_cell-cycle
+
+DimPlot(obj_integr, reduction = "umap", label = FALSE, group.by = "Phase")
+```
+
+## Unsupervised leiden clustering
+
+To cluster cell in an unsupervised fashion, we applied the graph-based leiden algorithm implemented in the Seurat package.
+
+```{r, fig.width = 10, fig.height = 5}
+#| label: umap_barplot_seurat-clusters
+p1 <- DimPlot(obj_integr, reduction = "umap", label = TRUE, repel = TRUE, group.by = "seurat_clusters") + theme(legend.position = "none")
+p2 <- ggplot(seurat_cluster_data, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  scale_fill_manual(values = seurat_cluster_data[, "color"]) +
+  coord_flip() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+  ) +
+  xlab("Cluster") +
+  ylab("Frequency")
+
+p1 + p2
+```
+
+## Celltype classification using a reference dataset
+
+We projected celltypes from a healthy scRNA-Seq dataset (@Reynolds2021) onto our dataset.
+
+```{r, fig.width = 12, fig.height = 6}
+#| label: umap_barplot_predicted-celltype
+Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
+
+p1 <- DimPlot(obj_integr, reduction = "umap", group.by = "predicted.id.Cell_type_nicknames", cols = celltype_colors) + theme(legend.position = "none", legend.text = element_text(size = 7)) + ggtitle("")
+
+p2 <- ggplot(obj_integr@meta.data, aes(x = predicted.id.Cell_type_nicknames, fill = predicted.id.Cell_type_nicknames)) +
+  geom_bar() +
+  theme_minimal() +
+  scale_fill_manual(values = celltype_colors) +
+  scale_x_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames)) +
+  coord_flip() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+  ) +
+  xlab("Celltype") +
+  ylab("Frequency")
+
+p1 + p2
+```
+
+To verify this further, we examined some canonical cell type markers for the specific skin and immune cell populations.
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 10, fig.width = 15 }
+#| label: dotplot_predicted-celltype_canonical-marker
+
+Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
+DotPlot(obj_integr, features = skin_marker, dot.scale = 4, idents = levels(Idents(obj_integr))) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+  ) +
+  scale_y_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames))
+
+# Idents(obj_integr) <- "seurat_clusters_annotated"
+# DotPlot(obj_integr, features = skin_marker, dot.scale = 4, idents = levels(Idents(obj_integr))) +
+#   scale_color_gradient2(high = "red", low = "blue") +
+#   theme(
+#     axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+#   ) +
+#   scale_y_discrete(limits = levels(obj_integr$seurat_clusters_annotated))
+
+```
+
+We calculated positive markers via differential expression, which further verify and define our predicted clusters.
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 10, fig.width = 10, dev=c('png', 'pdf') }
+#| label: heatmap_predicted-celltype_marker
+
+Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
+# DefaultAssay(obj_integr) <- "RNA"
+# cluster_marker_defaultRNA <- FindAllMarkers(obj_integr, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+# save(cluster_marker_defaultRNA, file = here(output_data_path, "predicted.id.Cell_type_nicknames_marker_defaultRNA.RData"))
+# write.csv2(cluster_marker_defaultRNA, file = here(output_data_path, "predicted.id.Cell_type_nicknames_marker_defaultRNA.csv"), row.names = F, quote = F)
+
+# Idents(obj_integr) <- "seurat_cluster"
+# seurat_cluster_marker_defaultRNA <- FindAllMarkers(obj_integr, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+# save(seurat_cluster_marker_defaultRNA, file = here(output_data_path, "seurat_cluster_marker_defaultRNA.RData"))
+# write.csv2(seurat_cluster_marker_defaultRNA, file = here(output_data_path, "seurat_cluster_marker_defaultRNA.csv"), row.names = F, quote = F)
+
+# DefaultAssay(obj_integr) <- "integrated"
+# cluster_marker <- FindAllMarkers(obj_integr, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+# save(cluster_marker, file = here(output_data_path, "predicted.id.Cell_type_nicknames_marker.RData"))
+
+# top5_predicted.id.Cell_type <- cluster_marker %>%
+#   group_by(cluster) %>%
+#   top_n(n = 5, wt = avg_log2FC)
+# DoHeatmap(obj_integr, features = top5_predicted.id.Cell_type$gene, group.by = "predicted.id.Cell_type_nicknames", group.bar.height = 0.03, group.colors = celltype_colors, hjust = 0) +
+#   xlab("Celltype") +
+#   ylab("Top 5 Marker per Cluster") + theme(legend.position = "none") +
+#   theme(
+#     axis.text.y = element_text(size = 15),
+#     axis.title = element_text(size = 30),
+#     axis.text.x = element_text(size = 25)
+#   )+
+#   scale_fill_gradient2(high = "red", low = "blue")
+
+top5_predicted.id.Cell_type <- cluster_marker_defaultRNA %>%
+  group_by(cluster) %>%
+  top_n(n = 5, wt = avg_log2FC)
+DoHeatmap(
+  obj_integr, 
+  features = top5_predicted.id.Cell_type$gene, 
+  group.by = "predicted.id.Cell_type_nicknames", 
+  group.bar.height = 0.03, 
+  group.colors = celltype_colors,
+  lines.width = 1, 
+  label = TRUE,
+  size = 3) +
+  xlab("Predicted celltype") +
+  ylab("Top 5 Marker per Cluster")  +
+  theme(
+    axis.text.y = element_text(size = 6)
+  ) +
+  scale_fill_gradient2(high = "red", low = "blue") 
+
+
+
+
+```
+
+We also calculated positive markers for the unsupervised leiden clusters.
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 10, fig.width = 10 }
+
+#| label: heatmap_seurat-cluster_marker
+
+top5_seurat_cluster <- seurat_cluster_marker_defaultRNA %>%
+  group_by(cluster) %>%
+  top_n(n = 5, wt = avg_log2FC)
+
+DoHeatmap(
+  obj_integr,
+  features = top5_seurat_cluster$gene,
+  group.by = "seurat_clusters_annotated",
+  group.bar.height = 0.03,
+  lines.width = 1,
+  label = TRUE,
+  size = 3) +
+  xlab("Annotated clusters") +
+  ylab("Top 5 Marker per Cluster")  +
+  theme(
+    axis.text.y = element_text(size = 8)
+  ) +
+  scale_fill_gradient2(high = "red", low = "blue")
+
+```
+
+## Celltypes per dataset 
+
+::: {.panel-tabset}
+
+### BF-LE-01-KT-PSO_all
+
+Number cells: `r table(obj_integr$orig.ident)["BF-LE-01-KT-PSO_all"]`
+
+```{r, echo=FALSE, fig.width = 10, fig.height = 5}
+#| label: umap_barplot_predicted-celltype_BF-LE-01-KT-PSO_all
+
+Idents(obj_integr) <- "orig.ident"
+
+plotting_subset <- function(my_ident = my_ident, seurat_object = obj_integr, celltype_cluster_data = celltype_cluster_data){
+  
+  Idents(obj_integr) <- "orig.ident"
+  my_subset <- subset(obj_integr, idents=my_ident)
+  Idents(my_subset) <- "predicted.id.Cell_type_nicknames"
+  celltype_cluster_data_subset <- data.frame(
+    table(my_subset@meta.data[, "predicted.id.Cell_type_nicknames"]),
+    "color" = celltype_colors[names(table(my_subset@meta.data[, "predicted.id.Cell_type_nicknames"]))]
+  )
+  
+  p1 <- DimPlot(my_subset, reduction = "umap", group.by = "predicted.id.Cell_type_nicknames", cols = celltype_colors) + theme(legend.position = "none", legend.text = element_text(size = 7)) + ggtitle("")
+  
+  p2 <- ggplot(celltype_cluster_data_subset, aes(x = Var1, y = Freq, fill = Var1)) +
+    geom_bar(stat = "identity") +
+    theme_minimal() +
+    scale_fill_manual(values = celltype_cluster_data_subset$color) +
+    coord_flip() +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+    ) +
+    xlab("Celltype") +
+    ylab("Frequency")
+  
+  p1 + p2
+}
+plotting_subset(my_ident = unique(Idents(obj_integr))[1], seurat_object = obj_integr, celltype_cluster_data = celltype_cluster_data)
+```
+
+### BF-LE-02-PG-PSO_all
+
+Number cells: `r table(obj_integr$orig.ident)["BF-LE-02-PG-PSO_all"]`
+
+```{r, echo=FALSE, fig.width = 10, fig.height = 5}
+#| label: umap_barplot_predicted-celltype_BF-LE-02-PG-PSO_all
+
+plotting_subset(my_ident = unique(Idents(obj_integr))[2], seurat_object = obj_integr, celltype_cluster_data = celltype_cluster_data)
+
+```
+
+### BF_LE_03_VC_03_all
+
+Number cells: `r table(obj_integr$orig.ident)["BF_LE_03_VC_03_all"]`
+
+```{r, echo=FALSE, fig.width = 10, fig.height = 5}
+#| label: umap_barplot_predicted-celltype_BF_LE_03_VC_03_all
+
+plotting_subset(my_ident = unique(Idents(obj_integr))[3], seurat_object = obj_integr, celltype_cluster_data = celltype_cluster_data)
+
+```
+
+:::
+  
+  # Cytokine expression
+  
+  ## All expressed Cytokines (no receptors)
+  
+```{r, echo=FALSE, fig.align = "center", fig.height = 10, fig.width = 15 }
+#| label: dotplot_all-cytokines_no-receptors
+
+cytokines <- intersect(interleukins, rownames(obj_integr))
+cytokines <- unique(c(cytokines,"IFNG", "TNF", "LTA", "TGFA", "TGFB1", "TGFB2", "TGFB3" )) 
+cytokines <- sort(cytokines)
+
+DotPlot(
+  obj_integr, 
+  features = cytokines, 
+  group.by = "predicted.id.Cell_type_nicknames", 
+  dot.scale = 5,
+  cluster.idents = TRUE
+) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  ) +
+  scale_y_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames))
+
+```
+
+## All expressed Cytokines + receptors
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 20, fig.width = 15}
+#| label: dotplot_all-cytokines_with-receptors
+
+cytokines_receptors <- intersect(interleukins, rownames(obj_integr))
+cytokines_receptors <- unique(c(cytokines_receptors, rownames(obj_integr)[grep("^IL", rownames(obj_integr))], "IFNG", "TNF", "LTA", rownames(obj_integr)[grep("^TGF", rownames(obj_integr))] )) 
+cytokines_receptors <- sort(cytokines_receptors)
+cytokines_receptors <- cytokines_receptors[-grep("ILK", cytokines_receptors)]
+cytokines_receptors <- cytokines_receptors[-grep("IL4I", cytokines_receptors)]
+
+DotPlot(
+  obj_integr, 
+  features = cytokines_receptors, 
+  group.by = "predicted.id.Cell_type_nicknames", 
+  dot.scale = 5,
+  cluster.idents = TRUE
+) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  ) +
+  scale_y_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames)) +
+  coord_flip()
+
+
+```
+
+```{r, fig.height=5,fig.width=25, include=FALSE}
+#| fig-height: 10
+#| fig-width: 10
+DotPlot(obj_integr, features = cytokines_receptors, group.by = "seurat_clusters_annotated", dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 20)
+  )
+
+```
+
+## Genes of interest
+
+### Dotplot
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 10, fig.width = 7}
+#| label: dotplot_genes-of-interest
+
+genes_of_interest <- c("IL17A", "IL17F", "TNF", "TGFA", "TGFB1", "IL22", "IL23", "TXLNA", "IL18", "IL32")
+
+DotPlot(
+  obj_integr, 
+  features = genes_of_interest, 
+  group.by = "predicted.id.Cell_type_nicknames", 
+  dot.scale = 5,
+  cluster.idents = TRUE
+) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  ) +
+  scale_y_discrete(limits = levels(obj_integr$predicted.id.Cell_type_nicknames)) 
+
+```
+
+### Feature Plots
+
+```{r, echo=FALSE, fig.align = "center",  fig.height = 20, fig.width = 10 }
+#| label: feature-plots_genes-of-interest
+
+genes_of_interest <- c("IL17A", "IL17F", "TNF", "TGFA", "TGFB1", "IL22", "IL23", "TXLNA", "IL18", "IL32")
+
+Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
+FeaturePlot(
+  obj_integr, 
+  features = genes_of_interest,
+  ncol = 2,
+  order = TRUE, 
+  label = TRUE, 
+  repel = TRUE,
+  min.cutoff = "q1",
+  max.cutoff = "q99"
+)
+```
+
+## All expressed Cytokines (no receptors) in inflammatory celltypes
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 7, fig.width = 15 }
+#| label: dotplot_all-cytokines_no-receptors_inflammatory-celltypes
+
+dendritic <- grep("DC", unique(obj_integr$predicted.id.Cell_type_nicknames), value = TRUE)
+tcells <- c("Tc", "Th", "Treg")
+macrophages <- grep("Mac", unique(obj_integr$predicted.id.Cell_type_nicknames), value = TRUE)
+langerhans <- grep("LC", unique(obj_integr$predicted.id.Cell_type_nicknames), value = TRUE)
+inflammatory <- sort(c(dendritic, tcells, macrophages, langerhans, "Mast cell", "Monocyte", "Plasma cell" ))
+
+
+DotPlot(
+  obj_integr, 
+  features = cytokines, 
+  group.by = "predicted.id.Cell_type_nicknames", 
+  dot.scale = 5,
+  # cluster.idents = TRUE,
+  idents = inflammatory
+) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  ) 
+
+```
+
+## All expressed cytokines + receptors in inflammatory celltypes
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 20, fig.width = 10 }
+#| label: dotplot_all-cytokines_with-receptors_inflammatory-celltypes
+
+DotPlot(
+  obj_integr, 
+  features = cytokines_receptors, 
+  group.by = "predicted.id.Cell_type_nicknames", 
+  dot.scale = 5,
+  #cluster.idents = TRUE,
+  idents = inflammatory
+) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  ) +
+  coord_flip()
+
+
+# DotPlot(obj_integr, features = cytokines_receptors, group.by = "predicted.id.Cell_type_nicknames", dot.scale = 6, idents = inflammatory) +
+#   scale_color_gradient2(high = "red", low = "blue") +
+#   theme(
+#     axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12),
+#     axis.text.y = element_text(size = 20)
+#   )
+
+```
+
+## Genes of interest in inflammatory celltypes
+
+```{r, echo=FALSE, fig.align = "center"}
+#| label: dotplot_genes-of-interest_inflammatory-celltypes
+
+genes_of_interest <- c("IL17A", "IL17F", "TNF", "TGFA", "TGFB1", "IL22", "IL23", "TXLNA", "IL18", "IL32")
+
+DotPlot(
+  obj_integr, 
+  features = genes_of_interest, 
+  group.by = "predicted.id.Cell_type_nicknames", 
+  dot.scale = 5,
+  #cluster.idents = TRUE,
+  idents = inflammatory
+) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )  
+
+```
+
+## Selected ILs/Features
+
+```{r, echo=FALSE, fig.align = "center",  fig.height = 50, fig.width = 12, include=FALSE }
+
+genes.bennet <- intersect(c(rownames(obj_integr)[grep("IL17", rownames(obj_integr))], "TNF", "TNFRSF1A", "IL22", rownames(obj_integr)[grep("IL12", rownames(obj_integr))], "IL23R", "IL23A", "NOS1", "NOS2", "IL13", "IL13RA1"), rownames(obj_integr))
+
+Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
+FeaturePlot(
+  obj_integr,
+  features = genes.bennet,
+  ncol = 2,
+  order = TRUE,
+  label = TRUE,
+  repel = TRUE,
+  min.cutoff = "q1",
+  max.cutoff = "q99"
+)
+
+```
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 7, fig.width = 10, include=FALSE}
+
+DotPlot(obj_integr, features = genes.bennet, group.by = "predicted.id.Cell_type_nicknames", dot.scale = 4) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12)
+  )
+
+```
+
+## Selected ILs/Features in inflammatory celltypes
+
+```{r, echo=FALSE, fig.align = "center",  fig.height = 5, fig.width = 12 , include=FALSE}
+
+DotPlot(obj_integr, features = genes.bennet, group.by = "predicted.id.Cell_type_nicknames", dot.scale = 4, idents = inflammatory) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 14)
+  )
+
+```
+
+
+# Interesting interferons (IFNs)
+
+## Interferone (alpha, beta, gamma), TNF-alpha, TGFalpha
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 6 }
+
+DotPlot(obj_integr, features = c("TNF", "LTA",  "TGFA", "TGFB1"), group.by = "predicted.id.Cell_type_nicknames", dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+
+```
+
+
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 11 }
+
+FeaturePlot(
+  obj_integr,
+  features = c("TNF", "LTA",  "TGFA", "TGFB1"),
+  ncol = 2,
+  order = TRUE,
+  label = TRUE,
+  repel = TRUE,
+  min.cutoff = "q1",
+  max.cutoff = "q99"
+)
+
+```
+
+## All TNFs and TGFs
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 15}
+#| label: dotplot_all-tnfs-and-tgfs
+
+interferons <- c(rownames(obj_integr)[grep("^TNF", rownames(obj_integr))], rownames(obj_integr)[grep("^TGF", rownames(obj_integr))])
+
+DotPlot(obj_integr, features = interferons, group.by = "predicted.id.Cell_type_nicknames", dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+# S100A... proteins
+
+## Dotplot
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 7, fig.width = 10 }
+#| label: dotplot_S100A-proteins
+
+S100A_proteins <- sort(rownames(obj_integr)[grep("S100A", rownames(obj_integr))])
+
+DotPlot(obj_integr, features = S100A_proteins, group.by = "predicted.id.Cell_type_nicknames", dot.scale = 4) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+## Feature Plots
+
+```{r, echo=FALSE, fig.align = "center",  fig.height = 40, fig.width = 10 }
+#| label: feature-plots_S100A-proteins
+
+Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
+FeaturePlot(
+  obj_integr, 
+  features = S100A_proteins,
+  ncol = 2,
+  order = TRUE, 
+  label = TRUE, 
+  repel = TRUE,
+  min.cutoff = "q1",
+  max.cutoff = "q99"
+)
+
+```
+
+# Further selected genes
+
+## Feature plots
+
+```{r, echo=FALSE, fig.align = "center",  fig.height = 50, fig.width = 10 }
+genes.bennet <- intersect(c(rownames(obj_integr)[grep("IL17", rownames(obj_integr))], "TNF", "TNFRSF1A", "IL22", rownames(obj_integr)[grep("IL12", rownames(obj_integr))], "IL23R", "IL23A", "NOS1", "NOS2", "IL13", "IL13RA1"), rownames(obj_integr))
+Idents(obj_integr) <- "predicted.id.Cell_type_nicknames"
+FeaturePlot(
+  obj_integr, 
+  features = genes.bennet,
+  ncol = 2,
+  order = TRUE, 
+  label = TRUE, 
+  repel = TRUE, 
+  min.cutoff = "q1",
+  max.cutoff = "q99"
+)
+```
+
+
+## Dotplot
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 7, fig.width = 10}
+DotPlot(obj_integr, features = genes.bennet, group.by = "predicted.id.Cell_type_nicknames", dot.scale = 4) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12)
+  )
+
+```
+
+# Receptor-Ligand Analysis (R-package LIANA, @Dimitrov2021)
+
+## Cytokines of interest
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 50, fig.width = 15 }
+lymphocytes <- c(tcells, "Plasma cell")
+liana_subset <- liana_obj  %>%
+  filter(ligand %in% genes_of_interest ) 
+
+  if(nrow(liana_subset) > 0){
+  		my_liana_dotplot2(
+  		  liana_subset, 
+  		  source_groups = inflammatory,
+  		  target_groups = inflammatory
+  		  )  %>%
+  		print()
+  }
+
+```
+
+```{r, fig.width=11, fig.height=8}
+
+circos_links <- liana_obj %>%
+  filter(aggregate_rank < 0.01 )%>%
+  filter(ligand %in% genes_of_interest ) 
+
+circos_links <- circos_links %>% 
+  select(ligand, receptor, sca.LRscore, source, target)
+
+colnames(circos_links) <- c("ligand", "target", "weight", "ligand_type", "target_type")
+
+ligand_celltype <- circos_links %>% 
+  select(ligand, ligand_type) %>% 
+  distinct()
+
+target_celltype <- circos_links %>% 
+  select(target, target_type) %>% 
+  distinct()
+
+
+unique_ligands <- ligand_celltype$ligand %>% table() %>% .[. == 1] %>% names()
+general_ligands <- circos_links$ligand %>% setdiff(unique_ligands)
+
+unique_targets <- target_celltype$target %>% table() %>% .[. == 1] %>% names()
+general_targets <- circos_links$target %>% setdiff(unique_targets)
+
+circos_links$ligand_type <- circos_links$ligand_type %>% paste0("_specific")
+circos_links$ligand_type[which(circos_links$ligand %in% general_ligands)] <- "General"
+
+circos_links$target_type <- circos_links$target_type %>% paste0("_specific")
+circos_links$target_type[which(circos_links$target %in% general_targets)] <- "General"
+
+
+target_type_indication_df <-  data.frame(
+    target_type = c(
+      as_vector(circos_links[which(circos_links$target %in% unique_targets), "target_type"]) %>% paste0("_specific"), 
+      rep("General", length(general_targets))
+      ),
+    target = c(
+      as_vector(circos_links[which(circos_links$target %in% unique_targets), "target"]),
+      general_targets
+    )
+)
+
+ligand_type_indication_df <-  data.frame(
+    ligand_type = c(
+      as_vector(circos_links[which(circos_links$ligand %in% unique_ligands), "ligand_type"]) %>% paste0("_specific"), 
+      rep("General", length(general_ligands))
+      ),
+    ligand = c(
+      as_vector(circos_links[which(circos_links$ligand %in% unique_ligands), "ligand"]),
+      general_ligands
+    )
+)
+
+grid_col_ligand <- c(color_list$predicted.id.Cell_type_nicknames, "gray50")
+names(grid_col_ligand) <- c(paste0(names(color_list$predicted.id.Cell_type_nicknames), "_specific"), "General")
+grid_col_ligand <-  grid_col_ligand[unique(circos_links$ligand_type)]
+
+grid_col_target <- c(color_list$predicted.id.Cell_type_nicknames, "gray30")
+names(grid_col_target) <- c(paste0(names(color_list$predicted.id.Cell_type_nicknames), "_specific"), "General")
+grid_col_target <-  grid_col_target[unique(circos_links$target_type)]
+
+grid_col_tbl_ligand = tibble(ligand_type = grid_col_ligand %>% names(), color_ligand_type = grid_col_ligand)
+grid_col_tbl_target = tibble(target_type = grid_col_target %>% names(), color_target_type = grid_col_target)
+
+circos_links = circos_links %>% mutate(ligand = paste(ligand," ")) # extra space: make a difference between a gene as ligand and a gene as target!
+circos_links = circos_links %>% inner_join(grid_col_tbl_ligand) %>% inner_join(grid_col_tbl_target)
+links_circle = circos_links %>% select(ligand,target, weight)
+
+ligand_color = circos_links %>% distinct(ligand,color_ligand_type)
+grid_ligand_color = ligand_color$color_ligand_type %>% set_names(ligand_color$ligand)
+target_color = circos_links %>% distinct(target,color_target_type)
+grid_target_color = target_color$color_target_type %>% set_names(target_color$target)
+
+grid_col =c(grid_ligand_color,grid_target_color)
+
+# give the option that links in the circos plot will be transparant ~ ligand-target potential score
+transparency = circos_links %>% mutate(weight =(weight-min(weight))/(max(weight)-min(weight))) %>% mutate(transparency = 1-weight) %>% .$transparency 
+
+target_order = circos_links$target %>% unique()
+ligand_order = circos_links$ligand %>% unique()
+order = c(ligand_order,target_order)
+
+width_same_cell_same_ligand_type = 0.5
+width_different_cell = 6
+width_ligand_target = 15
+width_same_cell_same_target_type = 0.5
+
+# gaps = c(
+#   # width_ligand_target,
+#   rep(width_same_cell_same_ligand_type, times = (circos_links %>% filter(ligand_type == "CAF-specific") %>% distinct(ligand) %>% nrow() -1)),
+#   width_different_cell,
+#   rep(width_same_cell_same_ligand_type, times = (circos_links %>% filter(ligand_type == "General") %>% distinct(ligand) %>% nrow() -1)),
+#   width_different_cell,
+#   rep(width_same_cell_same_ligand_type, times = (circos_links %>% filter(ligand_type == "Endothelial-specific") %>% distinct(ligand) %>% nrow() -1)), 
+#   width_ligand_target,
+#   rep(width_same_cell_same_target_type, times = (circos_links %>% filter(target_type == "p_emt") %>% distinct(target) %>% nrow() -1)),
+#   width_ligand_target
+#   )
+
+par(mar=c(1,1,1,1))
+
+link.visible <- links_circle$weight  %>% quantile(0.6)
+my_circos_par <- circos.par()
+my_chord <- chordDiagram(
+  links_circle,
+  directional = 1,
+  order=order,
+  link.sort = TRUE,
+  link.decreasing = FALSE,
+  grid.col = grid_col,
+  transparency = transparency,
+  diffHeight = 0.005,
+  direction.type = c("diffHeight", "arrows"),
+  link.arr.type = "big.arrow",
+  # link.visible = links_circle$weight >= link.visible,
+  annotationTrack = "grid", 
+    preAllocateTracks = list(track.height = 0.075)
+)
+
+
+my_track <- circos.track(track.index = 1, panel.fun = function(x, y) {
+    circos.text(CELL_META$xcenter, CELL_META$ylim[1], CELL_META$sector.index,
+        facing = "clockwise", niceFacing = TRUE, adj = c(0, 0.55), cex = 0.6)
+}, bg.border = NA) 
+
+legend("bottomleft", legend = unique(names(ligand_color$color_ligand_type)) , fill = ligand_color$color_ligand_type[unique(names(ligand_color$color_ligand_type))], title = "Ligand")
+
+legend("bottomright", legend = unique(names(target_color$color_target_type)) , fill = target_color$color_target_type[unique(names(target_color$color_target_type))], title = "Target")
+
+
+```
+ 
+

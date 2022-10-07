@@ -151,7 +151,7 @@ top5_marker_inflammatory_plot_down  <- map(de_integr_reynolds,~top_n(., n = -5, 
 Idents(obj_merged_reynolds) <- "predicted.id.Cell_type_nicknames"
 obj_merged_reynolds_inflammatory <- subset(obj_merged_reynolds, idents = inflammatory)
 
-DotPlot(obj_merged_reynolds_inflammatory, features = unique(top5_marker_inflammatory_plot_up), group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+DotPlot(obj_merged_reynolds_inflammatory, features = unique(top5_marker_inflammatory_plot_up), group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6) +
   theme(
     axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
 ) +

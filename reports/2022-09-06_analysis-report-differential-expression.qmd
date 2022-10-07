@@ -1,0 +1,659 @@
+---
+title: "Analysis of Psoriasis scRNA-Seq data from Bennet"
+author: "Maria Schmidt"
+affiliation: "IZBI, Interdisciplinary Centre for Bioinformatics, Leipzig University, Germany"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    number-sections: false
+    code-fold: true
+  pptx: default
+  pdf: default
+execute: 
+  echo: true
+  error: false
+  warning: false
+link-citations: true
+bibliography: "library.bib"
+---
+
+```{r load_packages_and_source_code}
+pacman::p_load(Seurat, tidyverse, here, ggplot2, pals, flextable, xlsx, tidyseurat)
+source(here("src","seurat-functions.r"))
+source(here("src","make-nicknames-for-celltypes.r"))
+output_data_path <- "output"
+input_data_path <- "data"
+```
+
+```{r load_data}
+filename <- here(output_data_path, "Reynolds2021_Data-all_seuratObj.RData")
+load(filename)
+seurat_object$predicted.id.Cell_type_nicknames <- make_nicknames(seurat_object$Cell_type)
+obj_reynolds <- seurat_object
+Idents(obj_reynolds) <- "predicted.id.Cell_type_nicknames"
+# obj_reynolds <- subset(obj_reynolds, downsample = 100)
+
+obj_reynolds$predicted.id.Cell_type <- obj_reynolds$Cell_type
+obj_merged_reynolds <- merge(obj_integr, obj_reynolds)
+DefaultAssay(obj_merged_reynolds) <- "RNA"
+obj_merged_reynolds <- NormalizeData(obj_merged_reynolds)
+obj_merged_reynolds <- FindVariableFeatures(obj_merged_reynolds)
+obj_merged_reynolds <- ScaleData(obj_merged_reynolds)
+# obj_merged_reynolds <- RunPCA(obj_merged_reynolds, npcs = 30) 
+# obj_merged_reynolds <- RunUMAP(obj_merged_reynolds, dims = 1:30) 
+# obj_merged_reynolds <- RunUMAP(obj_merged_reynolds, dims = 1:30) 
+# s.genes <- cc.genes$s.genes
+# g2m.genes <- cc.genes$g2m.genes
+# obj_merged_reynolds <- CellCycleScoring(obj_merged_reynolds, s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
+filename <- here(output_data_path, "merged-seurat-obj_reynolds.RData")
+# save(obj_merged_reynolds, file = filename)
+load(filename)
+
+filename <- here(output_data_path, "integrated-seurat-obj.RData")
+load(filename)
+filename <- here(output_data_path, "color-list.RData")
+load(filename)  
+celltype_colors <- color_list[["predicted.id.Cell_type_nicknames"]]
+seurat_colors <- scales::hue_pal()(length(table(obj_integr@meta.data[, "seurat_clusters"])))
+
+filename <- here(output_data_path, "BF_LE_06_KS_LE_all_seurat-obj.RData")
+load(filename)
+seurat_object$predicted.id.Cell_type_nicknames <- make_nicknames(seurat_object$predicted.id.Cell_type)
+obj_06 <- seurat_object
+
+filename <- here(output_data_path, "BF_LE_08_GD_pre_h_seurat-obj.RData")
+load(filename)
+seurat_object$predicted.id.Cell_type_nicknames <- make_nicknames(seurat_object$predicted.id.Cell_type)
+obj_08 <- seurat_object
+
+filename <- here(output_data_path, "interleukins.RData")
+load(filename)
+
+load(here(output_data_path, "integr-vs-reynolds_marker.RData"))
+load(here(output_data_path, "integr-vs-06_marker.RData"))
+load(here(output_data_path, "integr-vs-08_marker.RData"))
+
+load(here("2022-08-24_psoriasis_predicted-celltype.RData"))
+# load(here(output_data_path, "2022-08-24_psoriasis_predicted-celltype.RData"))
+# load(here(output_data_path, "2022-08-24_psoriasis_predicted-celltype.RData"))
+# load(here(output_data_path, "2022-08-24_psoriasis_predicted-celltype.RData"))
+# load(here(output_data_path, "2022-08-24_psoriasis_predicted-celltype.RData"))
+
+```
+
+
+```{r, include=FALSE,  fig.width = 12, fig.height = 5}
+# de_integr_reynolds <- find_de_genes(list("obj_integr" = obj_integr, "obj_reynolds" = obj_reynolds), "predicted.id.Cell_type_nicknames", output_data_path)
+# save(de_integr_reynolds, file = here(output_data_path, "integr-vs-reynolds_marker.RData"))
+# filename <- here(output_data_path, "integr-vs-reynolds_marker.xlsx")
+# de_integr_reynolds_sign <- map(de_integr_reynolds,~filter(., p_val_adj <0.05))
+# wb <- createWorkbook()
+# for(i in seq_along(de_integr_reynolds))
+# {
+#   gc()
+#   message("Creating sheet", i)
+#   sheet <- createSheet(wb, sheetName = names(de_integr_reynolds)[i])
+#   message("Adding data frame", i)
+#   addDataFrame(de_integr_reynolds[[i]], sheet)
+# }
+# saveWorkbook(wb, filename)
+# gc()
+# de_integr_06 <- find_de_genes(list("obj_integr" = obj_integr, "obj_06" = obj_06), "predicted.id.Cell_type_nicknames", output_data_path)
+# save(de_integr_06, file = here(output_data_path, "integr-vs-06_marker.RData"))
+# filename <- here(output_data_path, "integr-vs-06_marker.xlsx")
+# de_integr_06_sign <- map(de_integr_06,~filter(., p_val_adj <0.05))
+# wb <- createWorkbook()
+# for(i in seq_along(de_integr_06))
+# {
+#   gc()
+#   message("Creating sheet", i)
+#   sheet <- createSheet(wb, sheetName = names(de_integr_06)[i])
+#   message("Adding data frame", i)
+#   addDataFrame(de_integr_06[[i]], sheet)
+# }
+# saveWorkbook(wb, filename)
+# gc()
+# de_integr_08 <- find_de_genes(list("obj_integr" = obj_integr, "obj_08" = obj_08), "predicted.id.Cell_type_nicknames", output_data_path)
+# save(de_integr_08, file = here(output_data_path, "integr-vs-08_marker.RData"))
+# filename <- here(output_data_path, "integr-vs-08_marker.xlsx")
+# de_integr_08_sign <- map(de_integr_08,~filter(., p_val_adj <0.05))
+# wb <- createWorkbook()
+# for(i in seq_along(de_integr_08))
+# {
+#     gc()
+#   message("Creating sheet", i)
+#   sheet <- createSheet(wb, sheetName = names(de_integr_08)[i])
+#   message("Adding data frame", i)
+#   addDataFrame(de_integr_08[[i]], sheet)
+# }
+# saveWorkbook(wb, filename)
+# gc()
+
+```
+
+::: {.panel-tabset}
+
+## Psoriasis vs Healthy
+
+'BF_01+02+03' and 'obj_integr' means the integrated psoriasis data set.
+
+```{r, fig.height=15, fig.width=20}
+
+obj_merged_reynolds$predicted.id.Cell_type_nicknames <- make_nicknames(obj_merged_reynolds$predicted.id.Cell_type)
+
+obj_merged_reynolds$temp.ident <- "objreynolds"
+obj_merged_reynolds$temp.ident[grep("BF", colnames(obj_merged_reynolds))] <- "objintegr"
+DefaultAssay(obj_merged_reynolds) <- "RNA"
+
+de_integr_reynolds <- map(de_integr_reynolds, ~rownames_to_column(., var = "feature")) %>%
+  map( ~as_tibble(.))
+
+```
+
+### Similarity of the data sets
+
+```{r}
+DimPlot(obj_merged_reynolds, group.by = "predicted.id.Cell_type_nicknames", label = TRUE) + theme(legend.position = "none")
+DimPlot(obj_merged_reynolds, group.by = "temp.ident")
+DimPlot(obj_merged_reynolds, group.by = "Phase")
+FeaturePlot(obj_merged_reynolds, "nFeature_RNA")
+```
+
+
+### Top-5 differential expression features across inflammatory celltypes
+
+#### Dotplot
+
+```{r, fig.height=10, fig.width=15}
+dendritic <- grep("DC", unique(obj_integr$predicted.id.Cell_type_nicknames), value = TRUE)
+tcells <- c("Tc", "Th", "Treg")
+macrophages <- grep("Mac", unique(obj_integr$predicted.id.Cell_type_nicknames), value = TRUE)
+langerhans <- grep("LC", unique(obj_integr$predicted.id.Cell_type_nicknames), value = TRUE)
+inflammatory <- sort(c(dendritic, tcells, macrophages, langerhans, "Mast cell", "Monocyte", "Plasma cell" ))
+
+top10_marker_inflammatory <- map(de_integr_reynolds,~top_n(., n = 10, wt = avg_log2FC))
+top10_marker_inflammatory <- top10_marker_inflammatory[names(top10_marker_inflammatory) %in% inflammatory]
+top5_marker_inflammatory_plot_up  <- map(de_integr_reynolds,~top_n(., n = 5, wt = avg_log2FC)) %>%
+  map(~pull(., feature)) %>%
+  unlist()
+
+top5_marker_inflammatory_plot_down  <- map(de_integr_reynolds,~top_n(., n = -5, wt = avg_log2FC)) %>%
+  map(~pull(., feature)) %>%
+  unlist()
+
+Idents(obj_merged_reynolds) <- "predicted.id.Cell_type_nicknames"
+obj_merged_reynolds_inflammatory <- subset(obj_merged_reynolds, idents = inflammatory)
+
+DotPlot(obj_merged_reynolds_inflammatory, features = unique(top5_marker_inflammatory_plot_up), group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+) +
+  ggtitle("up in obj_integr")
+
+DotPlot(obj_merged_reynolds_inflammatory, features = unique(top5_marker_inflammatory_plot_down), group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+)+
+  ggtitle("down in obj_integr")
+
+
+```
+
+#### Violin Plots
+
+```{r, fig.height=3, fig.width=20}
+top5_marker_inflammatory_plot_up  <- map(de_integr_reynolds,~top_n(., n = 5, wt = avg_log2FC)) %>%
+  map(~pull(., feature))
+
+for(group in obj_merged_reynolds_inflammatory$predicted.id.Cell_type_nicknames){
+  print(VlnPlot(
+    object = obj_merged_reynolds_inflammatory, 
+    features = top5_marker_inflammatory_plot_up[[group]],
+    group.by = "predicted.id.Cell_type_nicknames", 
+    split.by = "temp.ident", 
+    ncol = 5,
+    idents = group
+    ) + 
+      plot_annotation(title = paste(group, "up")) + plot_layout(guides = 'collect'))
+}
+
+top5_marker_inflammatory_plot_down  <- map(de_integr_reynolds,~top_n(., n = -5, wt = avg_log2FC)) %>%
+  map(~pull(., feature)) 
+
+for(group in names(top5_marker_inflammatory_plot_down)){
+  print(VlnPlot(object = obj_merged_reynolds_inflammatory, features = top5_marker_inflammatory_plot_down[[group]],group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", ncol = 5) + plot_annotation(title = paste(group, "down"))+ plot_layout(guides = 'collect'))
+}
+
+
+```
+
+
+### Expression of all interleukins 
+
+```{r, fig.height=10, fig.width=20}
+interleukins <- intersect(interleukins, rownames(obj_integr))
+interleukins <- unique(c(interleukins, rownames(obj_integr)[grep("^IL", rownames(obj_integr))]))
+
+DotPlot(obj_merged_reynolds_inflammatory, features = interleukins, group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+)
+```
+
+### Expression of interestin genes
+
+
+```{r, fig.height=5, fig.width=10}
+genes_of_interest <- c("IL17A", "IL17F", "TNF", "TGFA", "TGFB1", "IL22", "IL23", "TXLNA", "IL18", "IL32")
+
+DotPlot(obj_merged_reynolds_inflammatory, features = genes_of_interest, group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+) + 
+  coord_flip()
+
+```
+
+```{r, fig.height=3, fig.width=5}
+# genes_of_interest <- c("IL17A", "IL17F", "TNF", "TGFA", "TGFB1", "IL22", "IL23", "TXLNA", "IL18", "IL32")
+Idents(obj_merged_reynolds_inflammatory) <- "predicted.id.Cell_type_nicknames"
+
+sapply(features, function(x){
+  
+  tb <- obj_merged_reynolds_inflammatory@meta.data %>%
+  data.frame(
+    t(as.matrix(obj_merged_reynolds_inflammatory@assays$RNA@data[intersect(genes_of_interest, rownames(obj_merged_reynolds_inflammatory@assays$RNA@data)),]))
+  ) %>%
+    pivot_longer(!nCount_RNA:nFeature_integrated, values_to = "data", names_to = "genes")
+
+  pw <-  ggplot(tb, aes(x = temp.ident, y = data, fill = temp.ident)) +
+      geom_boxplot() +
+      theme_minimal()  +
+      facet_wrap(~ genes) +
+    geom_jitter(shape=16, position=position_jitter(0.2))
+  
+  pw
+  
+   print(VlnPlot(object = obj_merged_reynolds_inflammatory, features = "IL32", group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident") + plot_annotation(title = paste(group, "up")) )
+
+  
+  # pw <- obj_merged_reynolds_inflammatory %>% 
+  #         join_features(features = genes_of_interest) %>%
+  #         ggplot(aes(temp.ident, .abundance_RNA + 1, fill = temp.ident)) +
+  #         geom_boxplot(outlier.shape = NA) +
+  #         geom_jitter(aes(size = nCount_RNA), alpha = 0.5, width = 0.2) +
+  #         scale_y_log10() +
+  #         my_theme
+
+  # pw <- RidgePlot(obj_merged_reynolds_inflammatory, features = genes_of_interest, idents = x, group.by = "temp.ident")
+  # pw <- pw + plot_annotation(
+  #   title = x
+  # )
+  # plot(pw)
+})
+
+
+# DotPlot(obj_merged_reynolds_inflammatory, features = genes_of_interest, group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+#   theme(
+#     axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+# ) + 
+#   coord_flip()
+
+```
+
+```{r}
+  tb <- obj_merged_reynolds_inflammatory@meta.data %>%
+  data.frame(
+    t(as.matrix(obj_merged_reynolds_inflammatory@assays$RNA@data[intersect(genes_of_interest, rownames(obj_merged_reynolds_inflammatory@assays$RNA@data)),]))
+  ) %>%
+    pivot_longer(!nCount_RNA:nFeature_integrated, values_to = "data", names_to = "genes")
+
+# stat.test <- tb %>%
+#   t_test(data ~ genes + predicted.id.Cell_type_nicknames) 
+# stat.test
+# stat.test <- stat.test %>% add_xy_position(x = "supp")
+# bxp + 
+#   stat_pvalue_manual(stat.test, label = "p") +
+#   scale_y_continuous(expand = expansion(mult = c(0.05, 0.1)))
+
+  pw <-  ggplot(tb, aes(x = temp.ident, y = data, fill = temp.ident)) +
+      geom_violin(draw_quantiles = c(.25, .5, .75, .95)) +
+      theme_minimal()  +
+      facet_wrap(~ genes) +
+    geom_jitter(shape=16, position=position_jitter(0.2)) 
+  
+  pw
+  
+for(gene in genes_of_interest){
+  
+  data_use <- GetAssayData(obj_merged_reynolds_inflammatory, assay = "RNA", slot = "data")[gene,]
+  table_use<- table(obj_merged_reynolds_inflammatory$temp.ident, data_use>0)
+  table_reynolds
+  table(obj_merged_reynolds_inflammatory$temp.ident, data_use>0)
+  
+  pie(
+    table_use["objintegr", ], 
+    main = gene, 
+    labels = scales::label_percent()(percentage), 
+    col = RColorBrewer::brewer.pal(length( rownames(counts_per_celltype)[ids]), "Dark2"))
+  
+  # legend(x="left", legend= rownames(counts_per_celltype)[ids], 
+  #  fill=RColorBrewer::brewer.pal(length( rownames(counts_per_celltype)[ids]), "Dark2"), cex = 0.8)
+}
+  
+   pie(
+    table_use["objreynolds", ], 
+    main = gene, 
+    labels = scales::label_percent()(percentage), 
+    col = RColorBrewer::brewer.pal(length( rownames(counts_per_celltype)[ids]), "Dark2"))
+  
+  # legend(x="left", legend= rownames(counts_per_celltype)[ids], 
+  #  fill=RColorBrewer::brewer.pal(length( rownames(counts_per_celltype)[ids]), "Dark2"), cex = 0.8)
+}
+
+
+  
+  data.use <- GetAssayData(obj_merged_reynolds_inflammatory, assay = "RNA", slot = "data")["IL32",]
+  pct.exp <- apply(X = data.use, MARGIN = 2, FUN = Seurat:::PercentAbove, 
+                     threshold = 0)
+  pie(counts_celltype/sum(counts_celltype), main = levels(obj_integr$predicted.id.Cell_type_nicknames)[i], labels = scales::label_percent()(counts_celltype/sum(counts_celltype)), col = RColorBrewer::brewer.pal(length( rownames(counts_per_celltype)[ids]), "Dark2"))
+ 
+```
+
+
+### Difference portraits
+
+We calculated difference portraits per group (left), as well as highly activated genes (middle) and gene sets (right).
+
+```{r group_portraits, fig.height=55, fig.width=9}
+
+differences.list <- apply(combn(unique(env$group.labels), 2), 2, function(x)
+{
+  list(which(env$group.labels==x[1]), which(env$group.labels==x[2]))
+})
+
+names(differences.list) <-
+  apply(combn(unique(env$group.labels), 2), 2, paste, collapse=" vs ")
+
+differences.list <- c( env$preferences$pairwise.comparison.list, differences.list )
+  
+
+
+# group.metadata <- do.call(cbind, by(t(env$metadata), env$group.labels, colMeans))[,unique(env$group.labels)]
+# local.env <- create_local_env_for_groups(env)
+# filename <- here(paste(env$files.name, "- Results"), "local-env_groups.RData")
+# save(local.env, file = filename)
+
+# par(mfrow=c(ncol(local.env$indata), 3))
+layout(matrix(1:(3*ncol(local.env$indata)), nrow = ncol(local.env$indata), byrow=TRUE), widths = c(1,1,2.5))
+
+#par(mar=c(0.5,2.5,4.5,1.5))
+
+for (m in 1:ncol(local.env$indata))
+{
+
+  par(mar=c(2,2,3,2))
+
+  image(matrix(env$metadata[,m], env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom),
+        axes=FALSE, col = env$color.palette.portraits(1000), main = colnames(local.env$indata)[m])
+
+  axis(1,
+       seq(0, 1, length.out=env$preferences$dim.1stLvlSom/10+1),
+       c(1, seq(10, env$preferences$dim.1stLvlSom, length.out=env$preferences$dim.1stLvlSom/10)),
+       cex.axis=1.0)
+
+  axis(2,
+       seq(0, 1, length.out=env$preferences$dim.1stLvlSom/10+1),
+       c(1, seq(10, env$preferences$dim.1stLvlSom, length.out=env$preferences$dim.1stLvlSom/10)),
+       cex.axis=1.0, las=1)
+
+  box()
+  
+  
+  # differentially expressed genes list
+  
+  n.genes <- 20
+  de.genes <- names(sort(local.env$indata[,m], decreasing = TRUE))
+  de.genes <- de.genes[ which(local.env$indata[de.genes,m]>0) ]
+  de.genes <- de.genes[ 1:min(n.genes,length(de.genes)) ]
+
+  de.genes.labels <- local.env$gene.info$names[de.genes]
+  de.genes.labels[which(de.genes.labels=="")] <- de.genes[which(de.genes.labels=="")]  
+  par(mar=c(0,0,0,0))
+
+  x.coords <- c(0, 0.15, 0.5, 0.7)
+  y.coords <- seq(0.75, 0.01, length.out=n.genes)[1:length(de.genes)]
+
+  plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1))
+
+  text(0, 0.88, "Marker", cex=1.2, adj=0)
+  text(x.coords, rep(c(0.82, 0.80), 4)[1:4],
+       c("Rank", "ID", "log(FC)", "p-value"),
+       cex=0.8, adj=0)
+  
+  if( length(de.genes)>0 )
+  {
+    
+    text(x.coords[1], y.coords, c(1:length(de.genes)), adj=0, cex=0.8)
+    text(x.coords[2], y.coords, de.genes.labels, cex=0.8, adj=0)
+    rect(x.coords[3]-0.02, y.coords[1]+0.01, 1, 0, border="white", col="white")
+    text(x.coords[3], y.coords, round(local.env$indata[de.genes, m], 2), cex=0.8, adj=0)
+    text(x.coords[4], y.coords, format(local.env$p.g.m[de.genes, m], digits=1), cex=0.8, adj=0)
+  }
+  
+  # differentially expressed gene sets list
+  
+  n.sets <- 20
+  
+  top.gs.score <- sort(local.env$spot.list.samples[[m]]$GSZ.score, decreasing=TRUE)[1:n.sets]
+  top.gs.p <- local.env$spot.list.samples[[m]]$GSZ.p.value[names(top.gs.score)]
+  top.gs.type <- sapply(local.env$gs.def.list, function(x) { x$Type })[names(top.gs.score)]
+  top.gs.type[grep("Reference Signatures", top.gs.type)] <- "Reference"
+
+  
+  par(mar=c(0,0,0,0))
+  
+  x.coords <- c(0, 0.1, 0.2, 0.3, 0.4, 0.5)
+  y.coords <- seq(0.75, 0.01, length.out=n.sets)
+  
+  plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1))
+  
+  text(0, 0.88, "Marker gene sets", cex=1.2, adj=0)
+  text(x.coords, rep(c(0.82, 0.80), 4)[1:5], c("Rank", "GSZ", "p-value", "#all", "Type", "Geneset"), cex=0.8, adj=0)
+
+  text(x.coords[1], y.coords, c(1:n.genes), adj=0, cex=0.8)
+  text(x.coords[2], y.coords, round(top.gs.score, 2), cex=0.8, adj=0)
+  text(x.coords[3], y.coords, format(top.gs.p, digits=1), cex=0.8, adj=0)
+  
+  text(x.coords[4], y.coords, sapply(local.env$gs.def.list[names(top.gs.score)],
+                                     function(x) { length(x$Genes) }), cex=0.8, adj=0)
+  
+  text(x.coords[5], y.coords, sapply(local.env$gs.def.list, function(x) { x$Type })[names(top.gs.score)], cex=0.8, adj=0)
+  text(x.coords[6], y.coords, names(top.gs.score), cex=0.8, adj=0)
+  
+
+}
+
+```
+
+## Dataset BF_01+02+03 vs BF_06 data 
+
+```{r, fig.height=15, fig.width=20}
+obj_merged_06 <- merge(obj_integr, obj_06)
+DefaultAssay(obj_merged_06) <- "RNA"
+obj_merged_06 <- NormalizeData(obj_merged_06)
+obj_merged_06 <- FindVariableFeatures(obj_merged_06)
+obj_merged_06 <- ScaleData(obj_merged_06)
+
+
+obj_merged_06$predicted.id.Cell_type_nicknames <- make_nicknames(obj_merged_06$predicted.id.Cell_type)
+
+obj_merged_06$temp.ident <- "objintegr"
+obj_merged_06$temp.ident[grep("BF_LE_06" , colnames(obj_merged_06))] <- "obj06"
+DefaultAssay(obj_merged_06) <- "RNA"
+
+de_integr_06 <- map(de_integr_06, ~rownames_to_column(., var = "feature")) %>%
+  map( ~as_tibble(.))
+
+```
+
+### Top-5 differential expression features across inflammatory celltypes
+
+```{r, fig.height=10, fig.width=15}
+
+top10_marker_inflammatory <- map(de_integr_06,~top_n(., n = 10, wt = avg_log2FC))
+top10_marker_inflammatory <- top10_marker_inflammatory[names(top10_marker_inflammatory) %in% inflammatory]
+top5_marker_inflammatory_plot_up  <- map(de_integr_06,~top_n(., n = 5, wt = avg_log2FC)) %>%
+  map(~pull(., feature)) %>%
+  unlist()
+
+top5_marker_inflammatory_plot_down  <- map(de_integr_06,~top_n(., n = -5, wt = avg_log2FC)) %>%
+  map(~pull(., feature)) %>%
+  unlist()
+
+Idents(obj_merged_06) <- "predicted.id.Cell_type_nicknames"
+obj_merged_06_inflammatory <- subset(obj_merged_06, idents = inflammatory)
+
+DotPlot(obj_merged_06_inflammatory, features = unique(top5_marker_inflammatory_plot_up), group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+) +
+  ggtitle("up in obj_integr")
+
+DotPlot(obj_merged_06_inflammatory, features = unique(top5_marker_inflammatory_plot_down), group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+) +
+  ggtitle("down in obj_integr")
+
+
+```
+
+### Expression of all interleukins 
+
+```{r, fig.height=10, fig.width=20}
+interleukins <- intersect(interleukins, rownames(obj_integr))
+interleukins <- unique(c(interleukins, rownames(obj_integr)[grep("^IL", rownames(obj_integr))]))
+
+DotPlot(obj_merged_06_inflammatory, features = interleukins, group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+)
+```
+
+### Expression of interestin genes
+
+
+```{r, fig.height=10, fig.width=15}
+genes.bennet <- intersect(c(rownames(obj_integr)[grep("IL17", rownames(obj_integr))], "TNF", "TNFRSF1A", "IL22", rownames(obj_integr)[grep("IL12", rownames(obj_integr))], "IL23R", "IL23A", "NOS1", "NOS2", "IL13", "IL13RA1"), rownames(obj_integr))
+
+DotPlot(obj_merged_06_inflammatory, features = genes.bennet, group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+)
+
+```
+
+
+
+
+## Dataset BF_01+02+03 vs BF_08 data 
+
+```{r, fig.height=15, fig.width=20}
+obj_merged_08 <- merge(obj_integr, obj_08)
+DefaultAssay(obj_merged_08) <- "RNA"
+obj_merged_08 <- NormalizeData(obj_merged_08)
+obj_merged_08 <- FindVariableFeatures(obj_merged_08)
+obj_merged_08 <- ScaleData(obj_merged_08)
+
+
+obj_merged_08$predicted.id.Cell_type_nicknames <- make_nicknames(obj_merged_08$predicted.id.Cell_type)
+
+obj_merged_08$temp.ident <- "objintegr"
+obj_merged_08$temp.ident[grep("BF_LE_08" , colnames(obj_merged_08))] <- "obj08"
+DefaultAssay(obj_merged_08) <- "RNA"
+
+
+de_integr_08 <- map(de_integr_08, ~rownames_to_column(., var = "feature")) %>%
+  map( ~as_tibble(.))
+
+```
+
+### Top-5 differential expression features across inflammatory celltypes
+
+```{r, fig.height=10, fig.width=15}
+
+top10_marker_inflammatory <- map(de_integr_08,~top_n(., n = 10, wt = avg_log2FC))
+top10_marker_inflammatory <- top10_marker_inflammatory[names(top10_marker_inflammatory) %in% inflammatory]
+top5_marker_inflammatory_plot_up  <- map(de_integr_08,~top_n(., n = 5, wt = avg_log2FC)) %>%
+  map(~pull(., feature)) %>%
+  unlist()
+
+top5_marker_inflammatory_plot_down  <- map(de_integr_08,~top_n(., n = -5, wt = avg_log2FC)) %>%
+  map(~pull(., feature)) %>%
+  unlist()
+
+Idents(obj_merged_08) <- "predicted.id.Cell_type_nicknames"
+obj_merged_08_inflammatory <- subset(obj_merged_08, idents = inflammatory)
+
+DotPlot(obj_merged_08_inflammatory, features = unique(top5_marker_inflammatory_plot_up), group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+) +
+  ggtitle("up in obj_integr")
+
+DotPlot(obj_merged_08_inflammatory, features = unique(top5_marker_inflammatory_plot_down), group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+) +
+  ggtitle("down in obj_integr")
+
+
+```
+
+### Expression of all interleukins 
+
+```{r, fig.height=10, fig.width=20}
+interleukins <- intersect(interleukins, rownames(obj_integr))
+interleukins <- unique(c(interleukins, rownames(obj_integr)[grep("^IL", rownames(obj_integr))]))
+
+DotPlot(obj_merged_08_inflammatory, features = interleukins, group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+  )
+    
+```    
+    
+    
+### Expression of interestin genes
+
+
+```{r, fig.height=10, fig.width=15}
+genes.bennet <- intersect(c(rownames(obj_integr)[grep("IL17", rownames(obj_integr))], "TNF", "TNFRSF1A", "IL22", rownames(obj_integr)[grep("IL12", rownames(obj_integr))], "IL23R", "IL23A", "NOS1", "NOS2", "IL13", "IL13RA1"), rownames(obj_integr))
+
+DotPlot(obj_merged_08_inflammatory, features = genes.bennet, group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+)
+
+```    
+    
+    
+)
+```
+
+### Expression of interestin genes
+
+
+```{r, fig.height=10, fig.width=15}
+genes.bennet <- intersect(c(rownames(obj_integr)[grep("IL17", rownames(obj_integr))], "TNF", "TNFRSF1A", "IL22", rownames(obj_integr)[grep("IL12", rownames(obj_integr))], "IL23R", "IL23A", "NOS1", "NOS2", "IL13", "IL13RA1"), rownames(obj_integr))
+
+DotPlot(obj_merged_08_inflammatory, features = genes.bennet, group.by = "predicted.id.Cell_type_nicknames", split.by = "temp.ident", dot.scale = 6, cols = c("red", "blue")) +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+)
+
+```
+
+:::

@@ -292,7 +292,7 @@ reduce_dimension_and_cluster <- function(seurat_object = seurat_object, figures_
     RunPCA(features = VariableFeatures(seurat_object)) %>%
     FindNeighbors(dims = 1:n_dims_use) %>%
     FindClusters(resolution = c(0.2, 0.4, 0.5, 0.6, 0.8, 1)) %>%
-    RunTSNE(dims = 1:n_dims_use, perplexity = perplexity) %>%
+    RunTSNE(dims = 1:n_dims_use, perplexity = perplexity, check_duplicates = FALSE) %>%
     RunUMAP(dims = 1:n_dims_use) %>%
     CellCycleScoring(
       s.features = cc.genes$s.genes,

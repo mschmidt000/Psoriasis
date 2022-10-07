@@ -1,0 +1,749 @@
+---
+title: "Psoriasis SOM-portrayal"
+author: "Maria Schmidt"
+affiliation: "IZBI, Interdisciplinary Centre for Bioinformatics, Leipzig University, Germany"
+date: "5/22/2021"
+format:
+  html:
+    toc: true
+    number-sections: false
+    code-fold: true
+  pptx: default
+  pdf: default
+link-citations: true
+bibliography: "library.bib"
+execute:
+  echo: true
+  error: false
+  warning: false
+self-contained: true
+---
+
+
+```{r }
+
+pacman::p_load(Seurat, tidyverse, ggplot2, pals, patchwork, oposSOM, here, ggmap, reshape2)
+source(here("src","paths.r"))
+source(here("src", "opossom-functions.r"))
+
+filename <- here( "oposSOM", "2022-08-24_psoriasis_predicted-celltype.RData")
+load(filename)
+filename <- here(output_data_path, "integrated-seurat-obj.RData")
+load(filename)
+filename <- here("oposSOM", paste(env$files.name, "- Results"), "local-env_groups.RData")
+load(filename)
+```
+
+# oposSOM analysis
+
+We employed the oposSOM software to analyze transcriptome data via SOMs, a neural network machine learning technique previously described (@Binder2011, @Wirth2011). Briefly, it transforms the high-dimensional expression data of n = `r nrow(env$indata)` gene transcripts into K = `r env$preferences$dim.1stLvlSom^2` metagenes. Metagenes were arranged in a `r paste(env$preferences$dim.1stLvlSom, "x" ,env$preferences$dim.1stLvlSom)` grid, and due to the self-organizing properties of the SOM, metagenes with similar expression profiles cluster together. Similarly, genes with similar expression profiles group together in the same or closely located regions of the grid. SOM analysis thus visualizes the individual transcriptome landscape of each cell, its “SOM portrait”, by coloring
+overexpressed and underexpressed metagenes in red and blue, respectively.
+
+
+## SOM portrayal: Transcriptional landscape of Psoriasis
+
+```{r overview_maps, fig.width=11, fig.height=14}
+
+layout(matrix(c(1, 1, 6,
+                2, 3, 6,
+                4, 5, 6), nrow=3, byrow=TRUE), heights=c(2,1,1), widths = c(1,1,1.5))
+
+
+par( mar=c(2,1,4,1))
+
+# summary map
+main <- "D-Cluster landscape"
+
+spot.list <- env$spot.list.dmap
+
+col <- colorRampPalette(c("blue2","white","red2"))(1000)
+image(matrix(spot.list$overview.map, env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom),
+      axes=FALSE, col=col, main=main, cex.main=1.5)
+
+
+# filename <- here(paste(env$files.name, "- Results"), "Summary Sheets - Modules", "D-Cluster", "dmap.png" )
+# png(file = filename)
+# image(matrix(spot.list$overview.map, env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom),
+#       axes=FALSE, col=col, cex.main=1.5)
+# dev.off()
+
+box()
+
+par(new=TRUE)
+
+leg.col <- colorRampPalette(c("darkblue","blue","lightblue","green2","yellow","red","darkred"))(length(spot.list$spots))
+
+plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,env$preferences$dim.1stLvlSom),
+     ylim=c(0,env$preferences$dim.1stLvlSom), xaxs="i", yaxs="i")
+
+points(do.call(rbind, lapply(spot.list$spots, function(x) { x$position })),
+       pch=16, cex=5, col="white")
+
+points(do.call(rbind, lapply(spot.list$spots, function(x) { x$position })),
+       pch=1, cex=5, col="black")
+
+
+text(do.call(rbind, lapply(spot.list$spots, function(x) { x$position })),
+       names(spot.list$spots), col="black", cex = 1.5)
+
+
+# population map
+m <- log10(env$som.result$node.summary[,"n.features"])
+m[which(is.infinite(m))] <- NA
+
+image(matrix(m, env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom),
+      axes=FALSE, col=env$color.palette.heatmaps(1000), main="Population Map", cex.main=1.5)
+
+mtext("log ( # genes in metagene )", side=1, line=0.5, cex=1)
+box()
+
+# variance map
+image(matrix(log10(apply(env$metadata, 1, var)), env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom),
+        axes=FALSE, col=env$color.palette.heatmaps(1000), cex.main=1.5, main="Metagene Variance Map")
+
+ mtext("log ( metagene variance )", side=1, line=0.5, cex=1)
+  box()
+
+suppressWarnings({ p <- -apply(env$p.m, 1, mean) })
+
+# significance map
+image(matrix(p, env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom),main="Metagene Significance Map",
+      axes=FALSE, cex.main=1.5, zlim=c(-1,0),
+      col=colorRampPalette(c("blue4", "blue4", "blue3", "blue3", "blue2",
+                             "blue2", "blue1", "lightblue", "darkgreen",
+                             "#008B00", "green3", "green", "yellow", "gold",
+                             "orange", "red", "darkred"))(1000))
+
+mtext(expression(paste("<",p[k],">")), side=1, line=0.5, cex=1)
+  box()
+  
+# covariance map
+errors <- c()
+
+for (i in 1:env$preferences$dim.1stLvlSom^2)
+{
+  genes <- names(which(env$som.result$feature.BMU == i))
+  mean.cor <- 0
+
+  for (ii in genes)
+  {
+    suppressWarnings({
+      mean.cor <- mean.cor + cor(env$metadata[i,], as.numeric(env$indata[ii,]))
+    })
+  }
+
+  errors[i] <- mean.cor / length(genes)
+}
+
+image(matrix(errors, env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom), axes=FALSE,
+      col=env$color.palette.heatmaps(1000), main="Gene-Metagene Covariance Map", cex.main=1.5)
+
+mtext("correlation genes - metagene", side=1, line=0.5, cex=1)
+box()
+
+# gene sets
+
+plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1), xaxs="i", yaxs="i")
+
+box()
+
+n.sets <- 10
+
+top.gs.p.list <- list()
+gs_types_of_interest <- sort(unique(sapply(env$gs.def.list, function(x) { x$Type })))[!(sort(unique(sapply(env$gs.def.list, function(x) { x$Type }))) %in% c("miRNA target", "TF"))]
+
+for (m in seq_along(spot.list$spots))
+{
+  top.gs.p.list[[names(spot.list$spots)[m]]] <- list()
+  for (i in sort(gs_types_of_interest))
+  {
+    top.gs.p.list[[names(spot.list$spots)[m]]][[i]] <-
+      sort(spot.list$spots[[m]]$Fisher.p[names(which(sapply(env$gs.def.list, function(x) { x$Type }) == i))])[1:n.sets]
+  
+  }
+}
+top.gs.p.list <- lapply(top.gs.p.list, unlist)
+top.gs.p.list <- lapply(top.gs.p.list, function(x){
+  names(x) <- sapply(strsplit(names(x), "\\."), function(xx){xx[2]})
+  x <- sort(x)
+  x
+})
+
+top.GS <- lapply(top.gs.p.list, function(x) {
+  paste0(names(head(x , n.sets)), " (", head(format(x, scientific = TRUE, digits = 1), n.sets),")" )
+  })
+leg.col <- colorRampPalette(c("darkblue","blue","lightblue","green2","yellow","red","darkred"))(length(spot.list$spots))
+leg.col <- as.vector(sapply(leg.col, c, rep(NA,n.sets-1)) )
+
+spots_nicknames <- toupper(c("A"="immune", "B"="cell-division", "C"="transcription", "D"="-",
+  "E"="mucosa", "F"="mitochondrial", "G"="-", "H"="metabolic",
+  "I"="-", "J"="extracellular", "K"="MITF-progr", "L"="endothel-specific",
+  "M"="adaptive-immune"))
+spots_nicknames_long <- as.vector(sapply(spots_nicknames, c, rep(NA,n.sets-1)) )
+
+leg.num <- names(spot.list$spots)
+leg.num <- as.vector(sapply(leg.num, c, rep(NA,n.sets-1)) )
+
+legend(x=0.02, y=1, unlist(top.GS), cex=0.75, col = leg.col, pch=15,
+       pt.cex=1.5, bty="n")
+
+legend(x=-0.03, y=1, legend=leg.num, cex=0.75, bty="n")
+
+legend(x=0.7, y=1, legend=spots_nicknames_long, cex=0.75, bty="n", text.col = "seagreen4", text.font = 2)
+
+```
+
+::: {.panel-tabset}
+
+## No IL18/IL32 subgroups
+
+### Spot expression per group
+
+We calculated the mean expression per expression module and sample.
+
+```{r spot_heatmap}
+
+  sample.spot.expression.image <-
+    if (nrow(spot.list$spotdata) > 1)
+    {
+      t(spot.list$spotdata[nrow(spot.list$spotdata):1,])
+    } else
+    {
+      as.matrix(spot.list$spotdata[nrow(spot.list$spotdata):1,])
+    }
+  
+  layout(matrix(c(0,2,0,3,1,0,0,4,5), 3, 3), heights=c(0.8,6,2), widths=c(0.5,5,3))
+  
+  par(mar=c(1,3,1,1))
+  
+  heatmap(t(sample.spot.expression.image),
+        xlab = "Cells", ylab = "", Rowv = NA,
+        Colv = NA, ColSideColors = env$group.colors,
+        labCol = "", labRow = paste0(rownames(spot.list$spotdata), ": ", spots_nicknames))
+  
+```
+
+```{r spot_heatmap_legend, fig.height=6, fig.width=1.5}
+par(mar = c(1,1,1,1))
+plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1), xaxs="i", yaxs="i")
+legend(x="left", legend=names(env$groupwise.group.colors), 
+   fill=env$groupwise.group.colors, cex = 0.8)
+
+
+```
+
+### Mean expression portraits
+
+We calculated mean expression portraits per group (left), as well as highly activated genes (middle) and gene sets (right).
+
+```{r group_portraits, fig.height=55, fig.width=9}
+
+# group.metadata <- do.call(cbind, by(t(env$metadata), env$group.labels, colMeans))[,unique(env$group.labels)]
+# local.env <- create_local_env_for_groups(env)
+# filename <- here(paste(env$files.name, "- Results"), "local-env_groups.RData")
+# save(local.env, file = filename)
+
+# par(mfrow=c(ncol(local.env$indata), 3))
+layout(matrix(1:(3*ncol(local.env$indata)), nrow = ncol(local.env$indata), byrow=TRUE), widths = c(1,1,2.5))
+
+#par(mar=c(0.5,2.5,4.5,1.5))
+
+for (m in 1:ncol(local.env$indata))
+{
+
+  par(mar=c(2,2,3,2))
+
+  image(matrix(env$metadata[,m], env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom),
+        axes=FALSE, col = env$color.palette.portraits(1000), main = colnames(local.env$indata)[m])
+
+  axis(1,
+       seq(0, 1, length.out=env$preferences$dim.1stLvlSom/10+1),
+       c(1, seq(10, env$preferences$dim.1stLvlSom, length.out=env$preferences$dim.1stLvlSom/10)),
+       cex.axis=1.0)
+
+  axis(2,
+       seq(0, 1, length.out=env$preferences$dim.1stLvlSom/10+1),
+       c(1, seq(10, env$preferences$dim.1stLvlSom, length.out=env$preferences$dim.1stLvlSom/10)),
+       cex.axis=1.0, las=1)
+
+  box()
+  
+  
+  # differentially expressed genes list
+  
+  n.genes <- 20
+  de.genes <- names(sort(local.env$indata[,m], decreasing = TRUE))
+  de.genes <- de.genes[ which(local.env$indata[de.genes,m]>0) ]
+  de.genes <- de.genes[ 1:min(n.genes,length(de.genes)) ]
+
+  de.genes.labels <- local.env$gene.info$names[de.genes]
+  de.genes.labels[which(de.genes.labels=="")] <- de.genes[which(de.genes.labels=="")]  
+  par(mar=c(0,0,0,0))
+
+  x.coords <- c(0, 0.15, 0.5, 0.7)
+  y.coords <- seq(0.75, 0.01, length.out=n.genes)[1:length(de.genes)]
+
+  plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1))
+
+  text(0, 0.88, "Marker", cex=1.2, adj=0)
+  text(x.coords, rep(c(0.82, 0.80), 4)[1:4],
+       c("Rank", "ID", "log(FC)", "p-value"),
+       cex=0.8, adj=0)
+  
+  if( length(de.genes)>0 )
+  {
+    
+    text(x.coords[1], y.coords, c(1:length(de.genes)), adj=0, cex=0.8)
+    text(x.coords[2], y.coords, de.genes.labels, cex=0.8, adj=0)
+    rect(x.coords[3]-0.02, y.coords[1]+0.01, 1, 0, border="white", col="white")
+    text(x.coords[3], y.coords, round(local.env$indata[de.genes, m], 2), cex=0.8, adj=0)
+    text(x.coords[4], y.coords, format(local.env$p.g.m[de.genes, m], digits=1), cex=0.8, adj=0)
+  }
+  
+  # differentially expressed gene sets list
+  
+  n.sets <- 20
+  
+  top.gs.score <- sort(local.env$spot.list.samples[[m]]$GSZ.score, decreasing=TRUE)[1:n.sets]
+  top.gs.p <- local.env$spot.list.samples[[m]]$GSZ.p.value[names(top.gs.score)]
+  top.gs.type <- sapply(local.env$gs.def.list, function(x) { x$Type })[names(top.gs.score)]
+  top.gs.type[grep("Reference Signatures", top.gs.type)] <- "Reference"
+
+  
+  par(mar=c(0,0,0,0))
+  
+  x.coords <- c(0, 0.1, 0.2, 0.3, 0.4, 0.5)
+  y.coords <- seq(0.75, 0.01, length.out=n.sets)
+  
+  plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1))
+  
+  text(0, 0.88, "Marker gene sets", cex=1.2, adj=0)
+  text(x.coords, rep(c(0.82, 0.80), 4)[1:5], c("Rank", "GSZ", "p-value", "#all", "Type", "Geneset"), cex=0.8, adj=0)
+
+  text(x.coords[1], y.coords, c(1:n.genes), adj=0, cex=0.8)
+  text(x.coords[2], y.coords, round(top.gs.score, 2), cex=0.8, adj=0)
+  text(x.coords[3], y.coords, format(top.gs.p, digits=1), cex=0.8, adj=0)
+  
+  text(x.coords[4], y.coords, sapply(local.env$gs.def.list[names(top.gs.score)],
+                                     function(x) { length(x$Genes) }), cex=0.8, adj=0)
+  
+  text(x.coords[5], y.coords, sapply(local.env$gs.def.list, function(x) { x$Type })[names(top.gs.score)], cex=0.8, adj=0)
+  text(x.coords[6], y.coords, names(top.gs.score), cex=0.8, adj=0)
+  
+
+}
+
+```
+
+### Expression profiles and maps of our genes of interest
+
+```{r goi_profiles_and_maps, fig.height=3.4,fig.width=9}
+
+features <- c("IL17A", "IL17F", "TNF", "TGFA", "TGFB1", "IL22", "IL23", "TXLNA", "IL18", "IL32")
+names(features) <- features
+
+# layout(matrix(c(1:8), ncol = 2, byrow = TRUE), widths = c(1, 0.2))
+
+plot_list <- list()
+
+for (i in seq_along(features)) {
+  set.genes <- ifelse(is.list(features), names(features[[i]]), names(features)[i])
+  if (length(intersect(set.genes, rownames(env$indata))) == 0) {
+    next
+  }
+  feature.data <- colMeans(env$indata[intersect(set.genes, rownames(env$indata)), , drop = F], na.rm = TRUE)
+  ylim <- c(quantile( feature.data,0.01  ),quantile( feature.data,0.99  ))
+
+  # par(mar = c(5, 6, 5, 4))
+  off.thres <- -sd(feature.data)
+  on.thres <- sd(feature.data)
+  
+  p1 <- ggplot(data.frame(feature.data, env$group.labels), aes(y=feature.data, x=env.group.labels, fill = env.group.labels)) +
+    geom_boxplot() +
+    scale_fill_manual(values = env$groupwise.group.colors) +
+    geom_hline(yintercept=c(off.thres, on.thres), linetype="dashed", size=0.3) +
+    geom_hline(yintercept=c(0), size=0.3) +
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+    ) +
+    xlab("groups") +
+    ylab("log expression") +
+    ggtitle("Profile + Map") +
+    ylim(ylim)
+
+  
+  # population map
+  # par(mar = c(5, 4, 5, 4))
+  n.map <- matrix(0, env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom)
+  gs.nodes <- env$som.result$feature.BMU[set.genes]
+  n.map[as.numeric(names(table(gs.nodes)))] <- table(gs.nodes)
+  n.map[which(n.map == 0)] <- NA
+  n.map <- matrix(n.map, env$preferences$dim.1stLvlSom)
+  lim <- c(1, env$preferences$dim.1stLvlSom) + env$preferences$dim.1stLvlSom * 0.01 * c(-1, 1)
+  colr <- env$color.palette.heatmaps(1000)[(na.omit(as.vector(n.map)) - min(n.map, na.rm = TRUE)) /
+                                             max(1, (max(n.map, na.rm = TRUE) - min(n.map, na.rm = TRUE))) *
+                                             999 + 1]
+  pw <- p1 + ~plot(which(!is.na(n.map), arr.ind = TRUE),
+       xlim = lim, ylim = lim, pch = 16, axes = TRUE,
+       xlab = "", ylab = "", xaxs = "i", yaxs = "i", col = colr,
+       cex = 0.5 + na.omit(as.vector(n.map)) / max(n.map, na.rm = TRUE) * 1.8
+  )
+  pw <- pw +
+        plot_layout(widths = c(2,1)) +
+        plot_annotation(
+            title = features[i]
+          )
+  
+  pw %>%
+    print()
+  # main <- ifelse(is.list(features), names(features)[i], features[i])
+  # mtext(main, side = 2, line = 2.5, cex = 1.5)
+  # box()
+  
+  # n.map.melt <- melt(n.map)
+  # 
+  # p2 <- ggplot(n.map.melt, aes(x = Var2, y = Var1)) +
+  #   geom_raster(aes(fill=value)) +
+  #   labs(title="Matrix") +
+  #   theme_minimal() +
+  #   theme(axis.text.x=element_text(size=9, angle=0, vjust=0.3),
+  #                      axis.text.y=element_text(size=9),
+  #                      plot.title=element_text(size=11))
+  
+  # pw <- p1 | p2
+  # plot_list[[features[i]]] <- pw + plot_layout(widths = c(2, 1), tag_level = 'A')
+}
+
+
+```
+
+### Pathway-analysis
+
+```{r, fig.width=12, fig.height=7}
+
+psf.results <- env$psf.results.groups
+group.colors <- env$groupwise.group.colors
+color.palette <- env$color.palette.heatmaps
+
+mean.psf.matrix <- t( sapply( psf.results, function(x) sapply( x, function(y) if(length(y$signal.at.sinks)>0) mean(y$signal.at.sinks) else 1 )  ) )
+mean.psf.matrix <- mean.psf.matrix[ order(apply(mean.psf.matrix,1,var),decreasing=TRUE)[1:(nrow(mean.psf.matrix)/2)] , ]
+
+heatmap(x=log1p(log1p(mean.psf.matrix)), cex.main=2,
+        col=color.palette(1000),scale="r",cexCol = 0.7,
+        mar=c(15, 0), ColSideColors=group.colors, cexDend=1 )
+
+# legend(x="bottomright", legend=c("min", "med", "max"),fill=color.palette(3), title = "mean node signal", cex = 0.8)
+
+heatmap(x=log1p(log1p(mean.psf.matrix)), cex.main=2,
+        col=color.palette(1000),scale="r", cexCol = 0.7,
+        mar=c(15,2), ColSideColors=group.colors, Colv=NA, cexDend=1)
+
+# legend(x="bottomright", legend=c("min", "med", "max"),fill=color.palette(3), title = "mean node signal", cex = 0.8)
+
+```
+
+## IL18/IL32 subgroups
+
+```{r load_IL18_IL32_data}
+filename <- here("oposSOM", "2022-08-24_psoriasis_IL18up-IL32up-subpopulations.RData")
+load(filename)
+filename <- here("oposSOM", paste(env$files.name, "- Results"), "local-env_groups.RData")
+load(filename)
+```
+
+### Spot expression per group
+
+We calculated the mean expression per expression module and sample.
+
+```{r spot_heatmap_IL}
+
+
+sample.spot.expression.image <-
+  if (nrow(spot.list$spotdata) > 1)
+  {
+    t(spot.list$spotdata[nrow(spot.list$spotdata):1,])
+  } else
+  {
+    as.matrix(spot.list$spotdata[nrow(spot.list$spotdata):1,])
+  }
+
+
+heatmap(t(sample.spot.expression.image),
+      xlab = "Cells", ylab = "", Rowv = NA,
+      Colv = NA, ColSideColors = env$group.colors,
+      labCol = "", labRow = paste0(rownames(spot.list$spotdata), ": ", spots_nicknames))
+
+```
+
+```{r spot_heatmap_IL_legend, fig.height=12, fig.width=3}
+par(mar = c(1,1,1,1))
+plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1), xaxs="i", yaxs="i")
+legend(x="left", legend=names(env$groupwise.group.colors), 
+   fill=env$groupwise.group.colors, cex = 0.8)
+
+
+```
+
+### Mean expression portrait
+
+We calculated mean expression portraits per group (left), as well as highly activated genes (middle) and gene sets (right).
+
+```{r, fig.height=150, fig.width=9}
+#| label: group_portraits_IL
+
+# group.metadata <- do.call(cbind, by(t(env$metadata), env$group.labels, colMeans))[,unique(env$group.labels)]
+# local.env <- create_local_env_for_groups(env)
+# filename <- here(paste(env$files.name, "- Results"), "local-env_groups.RData")
+# save(local.env, file = filename)
+
+# par(mfrow=c(ncol(local.env$indata), 3))
+layout(matrix(1:(3*ncol(local.env$indata)), nrow = ncol(local.env$indata), byrow=TRUE), widths = c(1,1,2.5))
+
+#par(mar=c(0.5,2.5,4.5,1.5))
+
+for (m in 1:ncol(local.env$indata))
+{
+
+  par(mar=c(2,2,3,2))
+
+  image(matrix(env$metadata[,m], env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom),
+        axes=FALSE, col = env$color.palette.portraits(1000), main = colnames(local.env$indata)[m])
+
+  axis(1,
+       seq(0, 1, length.out=env$preferences$dim.1stLvlSom/10+1),
+       c(1, seq(10, env$preferences$dim.1stLvlSom, length.out=env$preferences$dim.1stLvlSom/10)),
+       cex.axis=1.0)
+
+  axis(2,
+       seq(0, 1, length.out=env$preferences$dim.1stLvlSom/10+1),
+       c(1, seq(10, env$preferences$dim.1stLvlSom, length.out=env$preferences$dim.1stLvlSom/10)),
+       cex.axis=1.0, las=1)
+
+  box()
+  
+  
+  # differentially expressed genes list
+  
+  n.genes <- 20
+  de.genes <- names(sort(local.env$indata[,m], decreasing = TRUE))
+  de.genes <- de.genes[ which(local.env$indata[de.genes,m]>0) ]
+  de.genes <- de.genes[ 1:min(n.genes,length(de.genes)) ]
+
+  de.genes.labels <- local.env$gene.info$names[de.genes]
+  de.genes.labels[which(de.genes.labels=="")] <- de.genes[which(de.genes.labels=="")]  
+  par(mar=c(0,0,0,0))
+
+  x.coords <- c(0, 0.15, 0.5, 0.7)
+  y.coords <- seq(0.75, 0.01, length.out=n.genes)[1:length(de.genes)]
+
+  plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1))
+
+  text(0, 0.88, "Marker", cex=1.2, adj=0)
+  text(x.coords, rep(c(0.82, 0.80), 4)[1:4],
+       c("Rank", "ID", "log(FC)", "p-value"),
+       cex=0.8, adj=0)
+  
+  if( length(de.genes)>0 )
+  {
+    
+    text(x.coords[1], y.coords, c(1:length(de.genes)), adj=0, cex=0.8)
+    text(x.coords[2], y.coords, de.genes.labels, cex=0.8, adj=0)
+    rect(x.coords[3]-0.02, y.coords[1]+0.01, 1, 0, border="white", col="white")
+    text(x.coords[3], y.coords, round(local.env$indata[de.genes, m], 2), cex=0.8, adj=0)
+    text(x.coords[4], y.coords, format(local.env$p.g.m[de.genes, m], digits=1), cex=0.8, adj=0)
+  }
+  
+  # differentially expressed gene sets list
+  
+  n.sets <- 20
+  
+  top.gs.score <- sort(local.env$spot.list.samples[[m]]$GSZ.score, decreasing=TRUE)[1:n.sets]
+  top.gs.p <- local.env$spot.list.samples[[m]]$GSZ.p.value[names(top.gs.score)]
+  top.gs.type <- sapply(local.env$gs.def.list, function(x) { x$Type })[names(top.gs.score)]
+  top.gs.type[grep("Reference Signatures", top.gs.type)] <- "Reference"
+  
+  par(mar=c(0,0,0,0))
+  
+  x.coords <- c(0, 0.1, 0.2, 0.3, 0.4, 0.5)
+  y.coords <- seq(0.75, 0.01, length.out=n.sets)
+  
+  plot(0, type="n", axes=FALSE, xlab="", ylab="", xlim=c(0,1), ylim=c(0,1))
+  
+  text(0, 0.88, "Marker gene sets", cex=1.2, adj=0)
+  text(x.coords, rep(c(0.82, 0.80), 4)[1:5], c("Rank", "GSZ", "p-value", "#all", "Type", "Geneset"), cex=0.8, adj=0)
+
+  text(x.coords[1], y.coords, c(1:n.genes), adj=0, cex=0.8)
+  text(x.coords[2], y.coords, round(top.gs.score, 2), cex=0.8, adj=0)
+  text(x.coords[3], y.coords, format(top.gs.p, digits=1), cex=0.8, adj=0)
+  
+  text(x.coords[4], y.coords, sapply(local.env$gs.def.list[names(top.gs.score)],
+                                     function(x) { length(x$Genes) }), cex=0.8, adj=0)
+  
+  text(x.coords[5], y.coords, top.gs.type, cex=0.8, adj=0)
+  text(x.coords[6], y.coords, names(top.gs.score), cex=0.8, adj=0)
+  
+
+}
+
+```
+
+### Expression profiles and maps of our genes of interest
+
+```{r goi_profiles_and_maps_IL, fig.height=3.4,fig.width=9}
+
+features <- c("IL17A", "IL17F", "TNF", "TGFA", "TGFB1", "IL22", "IL23", "TXLNA", "IL18", "IL32")
+names(features) <- features
+
+# layout(matrix(c(1:8), ncol = 2, byrow = TRUE), widths = c(1, 0.2))
+
+plot_list <- list()
+
+for (i in seq_along(features)) {
+  set.genes <- ifelse(is.list(features), names(features[[i]]), names(features)[i])
+  if (length(intersect(set.genes, rownames(env$indata))) == 0) {
+    next
+  }
+  feature.data <- colMeans(env$indata[intersect(set.genes, rownames(env$indata)), , drop = F], na.rm = TRUE)
+  ylim <- c(quantile( feature.data,0.01  ),quantile( feature.data,0.99  ))
+
+  # par(mar = c(5, 6, 5, 4))
+  off.thres <- -sd(feature.data)
+  on.thres <- sd(feature.data)
+  
+  p1 <- ggplot(data.frame(feature.data, env$group.labels), aes(y=feature.data, x=env.group.labels, fill = env.group.labels)) +
+    geom_boxplot() +
+    scale_fill_manual(values = env$groupwise.group.colors) +
+    geom_hline(yintercept=c(off.thres, on.thres), linetype="dashed", size=0.3) +
+    geom_hline(yintercept=c(0), size=0.3) +
+    theme_minimal() +
+    theme(
+      legend.position = "none",
+      axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+    ) +
+    xlab("groups") +
+    ylab("log expression") +
+    ggtitle("Profile + Map") +
+    ylim(ylim)
+
+  
+  # population map
+  # par(mar = c(5, 4, 5, 4))
+  n.map <- matrix(0, env$preferences$dim.1stLvlSom, env$preferences$dim.1stLvlSom)
+  gs.nodes <- env$som.result$feature.BMU[set.genes]
+  n.map[as.numeric(names(table(gs.nodes)))] <- table(gs.nodes)
+  n.map[which(n.map == 0)] <- NA
+  n.map <- matrix(n.map, env$preferences$dim.1stLvlSom)
+  lim <- c(1, env$preferences$dim.1stLvlSom) + env$preferences$dim.1stLvlSom * 0.01 * c(-1, 1)
+  colr <- env$color.palette.heatmaps(1000)[(na.omit(as.vector(n.map)) - min(n.map, na.rm = TRUE)) /
+                                             max(1, (max(n.map, na.rm = TRUE) - min(n.map, na.rm = TRUE))) *
+                                             999 + 1]
+  pw <- p1 + ~plot(which(!is.na(n.map), arr.ind = TRUE),
+       xlim = lim, ylim = lim, pch = 16, axes = TRUE,
+       xlab = "", ylab = "", xaxs = "i", yaxs = "i", col = colr,
+       cex = 0.5 + na.omit(as.vector(n.map)) / max(n.map, na.rm = TRUE) * 1.8
+  )
+  pw <- pw +
+        plot_layout(widths = c(2,1)) +
+        plot_annotation(
+            title = features[i]
+          )
+  
+  pw %>%
+    print()
+  # main <- ifelse(is.list(features), names(features)[i], features[i])
+  # mtext(main, side = 2, line = 2.5, cex = 1.5)
+  # box()
+  
+  # n.map.melt <- melt(n.map)
+  # 
+  # p2 <- ggplot(n.map.melt, aes(x = Var2, y = Var1)) +
+  #   geom_raster(aes(fill=value)) +
+  #   labs(title="Matrix") +
+  #   theme_minimal() +
+  #   theme(axis.text.x=element_text(size=9, angle=0, vjust=0.3),
+  #                      axis.text.y=element_text(size=9),
+  #                      plot.title=element_text(size=11))
+  
+  # pw <- p1 | p2
+  # plot_list[[features[i]]] <- pw + plot_layout(widths = c(2, 1), tag_level = 'A')
+}
+
+
+```
+
+```{r barplots }
+df_IL18_IL32 <- sort(table(obj_integr$predicted.id.Cell_type_nicknames_IL18_IL32))[grep("IL", names(sort(table(obj_integr$predicted.id.Cell_type_nicknames_IL18_IL32))))] %>% 
+  data.frame()
+
+plt <- ggplot(df_IL18_IL32, aes(x = Var1, y = Freq, fill = Var1 )) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 5),
+  ) +
+  xlab("Cluster") +
+  ylab("Frequency")+
+  scale_fill_manual(values = env$groupwise.group.colors[df_IL18_IL32$Var1]) 
+plt
+
+```
+
+```{r, fig.width=15, fig.height=5}
+#| label: pies
+
+counts_per_celltype <- table(obj_integr$predicted.id.Cell_type_nicknames_IL18_IL32, obj_integr$predicted.id.Cell_type_nicknames)
+
+par(mfrow=c(3,3), mar = c(0.5,1,1,1))
+
+
+for(i in seq_along(levels(obj_integr$predicted.id.Cell_type_nicknames))){
+  
+  ids <- grep(levels(obj_integr$predicted.id.Cell_type_nicknames)[i], rownames(counts_per_celltype))
+  if(length(ids)==0){
+    next
+  }
+  counts_celltype <- counts_per_celltype[ids, i]
+  if(sum(counts_celltype)==0 | length(counts_celltype)<2){
+    next
+  }
+# 
+  pie(counts_celltype/sum(counts_celltype), main = levels(obj_integr$predicted.id.Cell_type_nicknames)[i], labels = scales::label_percent()(counts_celltype/sum(counts_celltype)), col = RColorBrewer::brewer.pal(length( rownames(counts_per_celltype)[ids]), "Dark2"))
+  legend(x="left", legend= rownames(counts_per_celltype)[ids], 
+   fill=RColorBrewer::brewer.pal(length( rownames(counts_per_celltype)[ids]), "Dark2"), cex = 0.8)
+
+  
+}
+
+```
+
+### Pathway-analysis
+
+```{r, fig.width=14, fig.height=8}
+
+psf.results <- env$psf.results.groups
+group.colors <- env$groupwise.group.colors
+color.palette <- env$color.palette.heatmaps
+
+mean.psf.matrix <- t( sapply( psf.results, function(x) sapply( x, function(y) if(length(y$signal.at.sinks)>0) mean(y$signal.at.sinks) else 1 )  ) )
+mean.psf.matrix <- mean.psf.matrix[ order(apply(mean.psf.matrix,1,var),decreasing=TRUE)[1:(nrow(mean.psf.matrix)/2)] , ]
+
+heatmap(x=log1p(log1p(mean.psf.matrix)), cex.main=2,
+        col=color.palette(1000),scale="r",cexCol = 0.7,
+        mar=c(15, 0), ColSideColors=group.colors, cexDend=1 )
+
+# legend(x="bottomright", legend=c("min", "med", "max"),fill=color.palette(3), title = "mean node signal", cex = 0.8)
+
+heatmap(x=log1p(log1p(mean.psf.matrix)), cex.main=2,
+        col=color.palette(1000),scale="r", cexCol = 0.7,
+        mar=c(15,2), ColSideColors=group.colors, Colv=NA, cexDend=1)
+
+# legend(x="bottomright", legend=c("min", "med", "max"),fill=color.palette(3), title = "mean node signal", cex = 0.8)
+
+```
+
+:::
+
+

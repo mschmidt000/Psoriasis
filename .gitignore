@@ -11,3 +11,6 @@ output/**
 * - Results/**
 renv/**
 omnipathr-log/**
+*analysis-report_files/**
+oposSOM/**
+reports/*.html

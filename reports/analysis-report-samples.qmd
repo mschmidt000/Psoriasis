@@ -1,0 +1,536 @@
+---
+title: "Analysis update"
+subtitle: "Analysis of scRNA-Seq data from Bennet"
+author: "Maria Schmidt"
+affiliation: "IZBI, Interdisciplinary Centre for Bioinformatics, Leipzig University, Germany"
+date: "`r Sys.Date()`"
+format:
+  html: 
+    toc: true
+    number-sections: false
+    code-fold: true
+  pptx: default
+  docx: default
+link-citations: true
+params:
+  run: "Reynolds2021_Data-all_seuratObj"
+---
+
+
+```{r setup}
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+
+```
+
+
+```{r}
+pacman::p_load(Seurat, tidyverse, here, ggplot2, pals, flextable, patchwork)
+source(here("src","seurat-functions.r"))
+source(here("src","make-nicknames-for-celltypes.r"))
+output_data_path <- "output"
+input_data_path <- "data"
+
+if(params$run == "Reynolds2021_Data-all_seuratObj" ){
+  
+      load(here("output", paste0(params$run,".RData")))
+      cell_type = "Cell_type_nicknames"
+      orig_ident <- "Flow_gate"
+      unfiltered_matrix_ncol <- ncol(seurat_object)
+      seurat_object$Cell_type_nicknames <- make_nicknames(seurat_object$Cell_type)
+      celltype_colors <- randomcoloR::distinctColorPalette(length(table(seurat_object@meta.data[, cell_type])))
+      celltype_cluster_data <- data.frame(
+          table(seurat_object@meta.data[, cell_type]),
+          "color" = celltype_colors )
+    
+    } else {
+      
+      seurat_object <- load_seurat_object(data_set_name = params$run,  output_data_path = output_data_path)
+      cell_type = "predicted.id.Cell_type_nicknames"
+      orig_ident = "orig.ident"
+      unfiltered_matrix_ncol <- ncol(Read10X(data.dir =  here(input_data_path, params$run, "filtered_feature_bc_matrix")))
+      # seurat_object$predicted.id.Cell_type_nicknames <- make_nicknames(seurat_object$predicted.id.Cell_type)
+      celltype_colors <- randomcoloR::distinctColorPalette(length(unique(seurat_object@meta.data[, cell_type])))
+      names(celltype_colors) <- sort(unique(seurat_object@meta.data[, cell_type]))
+      celltype_cluster_data <- data.frame(
+          table(seurat_object@meta.data[, cell_type])[which(table(seurat_object@meta.data[, cell_type])>0)],
+          "color" = celltype_colors
+      )
+}
+seurat_colors <- scales::hue_pal()(length(unique(seurat_object@meta.data[, "seurat_clusters"])))
+seurat_cluster_data <- data.frame(
+    table(seurat_object@meta.data[, "seurat_clusters"]),
+    "color" = seurat_colors
+)
+filename <- here(output_data_path, "bennets-skin-marker.RData")
+load(filename)
+filename <- here(output_data_path, "reynolds-skin-marker.RData")
+load(filename) 
+filename <- here(output_data_path, "interleukins.RData")
+load(filename)
+# filename <- here(output_data_path, "TXLNA-cells-markers.RData")
+# load(filename)
+# filename <- here(output_data_path, "IFNL1-cells-markers.RData")
+# load(filename)
+filename <- here(output_data_path, paste( params$run, cell_type, "marker.RData", sep = "_"))
+load(filename)
+
+
+```
+
+# Preprocessing, data integration and dimension reduction
+
+## Quality check
+
+```{r, echo=FALSE,  fig.width = 16, fig.height = 11}
+p1 <- VlnPlot(seurat_object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by = cell_type, cols = celltype_colors)
+p2 <- VlnPlot(seurat_object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by = "seurat_clusters")
+
+p1 / p2
+```
+
+```{r, echo=FALSE,  fig.width = 7, fig.height = 5}
+VlnPlot(seurat_object, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), group.by = orig_ident)
+FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "percent.mt", group.by = orig_ident)
+ggplot(seurat_object@meta.data) +
+    geom_point(aes(x = nCount_RNA, y = nFeature_RNA, colour = percent.mt)) +
+    theme_minimal()
+```
+
+
+```{r, echo=FALSE,  fig.width = 7, fig.height = 7}
+ft <- continuous_summary(
+  seurat_object@meta.data,
+  columns = c("nFeature_RNA", "nCount_RNA", "percent.mt", "percent.rps"),
+  by = orig_ident,
+  hide_grouplabel = TRUE,
+  digits = 3
+)
+ft <-  set_caption(ft, caption = "Statistics of number of counts, features, mitochondrial expression and ribosomal expression")
+ft
+```
+
+## Cell-cycle scoring
+
+```{r, echo=FALSE,  fig.width = 6, fig.height = 5}
+DimPlot(seurat_object, reduction = "umap", label = FALSE, group.by = "Phase")
+```
+
+## Unsupervised louvain clustering
+
+To cluster cell in an unsupervised fashion, we applied the Louvain-algorithm implemented in the Seurat package.
+
+```{r, echo=FALSE,  fig.width = 10, fig.height = 5}
+p1 <- DimPlot(seurat_object, reduction = "umap", label = TRUE, repel = TRUE, group.by = "seurat_clusters") + theme(legend.position = "none")
+p2 <- ggplot(seurat_cluster_data, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  scale_fill_manual(values = seurat_cluster_data[, "color"]) +
+  coord_flip() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+  ) +
+  xlab("Cluster") +
+  ylab("Frequency")
+
+p1 + p2
+```
+
+## Celltype classification using a reference dataset
+
+We projected celltypes from a healthy scRNA-Seq dataset (Reynolds et al., 2021) onto our dataset.
+
+```{r, echo=FALSE,  fig.width = 10, fig.height = 5}
+
+Idents(seurat_object) <- cell_type
+
+p1 <- DimPlot(seurat_object, reduction = "umap", group.by = cell_type, cols = celltype_colors) + theme(legend.position = "none", legend.text = element_text(size = 7)) + ggtitle("")
+
+p2 <- ggplot(celltype_cluster_data, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  scale_fill_manual(values = celltype_colors) +
+  coord_flip() +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+  ) +
+  xlab("Celltype") +
+  ylab("Frequency")
+
+p1 + p2
+```
+
+To verify this further, we examined some canonical cell type markers for the specific skin and immune cell populations.
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 10, fig.width = 15 }
+DotPlot(seurat_object, features = skin_marker, group.by = cell_type, dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+  )
+```
+
+We calculated positive markers via differential expression, which further verify and define our predicted clusters .
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 20, fig.width = 20 }
+
+Idents(seurat_object) <- cell_type
+# cluster_marker <- FindAllMarkers(seurat_object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+# save(cluster_marker, file = here(output_data_path, paste( params$run, cell_type, "marker.RData", sep = "_")))
+top5_predicted.id.Cell_type <- cluster_marker %>%
+  group_by(cluster) %>%
+  top_n(n = 5, wt = avg_log2FC)
+DoHeatmap(seurat_object, features = top5_predicted.id.Cell_type$gene, group.by = cell_type, group.bar.height = 0.03, group.colors = celltype_cluster_data$color, hjust = 0) +
+  xlab("Celltype") +
+  ylab("Top 5 Marker per Cluster") + theme(legend.position = "none") +
+  theme(
+    axis.text.y = element_text(size = 15),
+    axis.title = element_text(size = 30),
+    axis.text.x = element_text(size = 25)
+  ) +
+  scale_fill_gradient2(high = "red", low = "blue")
+```
+
+
+# Interleukine (IL) expression
+
+## All differentilly expressed ILs
+
+```{r echo=FALSE, fig.align="center", fig.height=6, fig.width=9}
+interleukins <- intersect(interleukins, rownames(seurat_object))
+interleukins <- unique(c(interleukins, rownames(seurat_object)[grep("^IL", rownames(seurat_object))]))
+interleukins.diffexpr <- unique(cluster_marker$gene[which(cluster_marker$gene %in% interleukins)])
+
+DotPlot(seurat_object, features = interleukins.diffexpr, group.by = cell_type, dot.scale = 5) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 13),
+    axis.text.y = element_text(size = 13)
+  )
+```
+
+## All differentilly expressed ILs in inflammatory celltypes
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 5, fig.width = 5 }
+#  (also die DC- und die T-Fraktion, dann gerne Th1/Th2-aufgeschlüsselt, Makrophagen, Monocyten, Plasmazellen, Mastzellen)
+dendritic <- grep("DC", unique(seurat_object@meta.data[, cell_type]), value = TRUE)
+tcells <- c("Tc", "Th", "Treg")
+macrophages <- grep("Mac", unique(seurat_object@meta.data[, cell_type]), value = TRUE)
+langerhans <- grep("LC", unique(seurat_object@meta.data[, cell_type]), value = TRUE)
+inflammatory <- sort(c(dendritic, tcells, macrophages, langerhans, "Mast cell", "Monocyte", "Plasma cell" ))
+interleukins_inflammatory_diffexpr <- unique(cluster_marker$gene[which(cluster_marker$gene %in% interleukins & cluster_marker$cluster %in% inflammatory)])
+
+Idents(seurat_object) <- cell_type
+
+```
+
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 5, fig.width = 13}
+
+DotPlot(seurat_object, features = interleukins_inflammatory_diffexpr, group.by = cell_type, dot.scale = 5, idents = inflammatory) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 13),
+    axis.text.y = element_text(size = 13)
+
+  )
+```
+
+
+## All expressed ILs
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 20 }
+
+DotPlot(seurat_object, features = interleukins, group.by = cell_type, dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 20)
+  )
+```
+
+## All expressed ILs in inflammatory celltypes
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 6, fig.width = 20 }
+
+DotPlot(seurat_object, features = interleukins, group.by = cell_type, dot.scale = 6, idents = inflammatory) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12),
+    axis.text.y = element_text(size = 20)
+  )
+```
+
+## Selected ILs/Features
+
+```{r, echo=FALSE, fig.align = "center",  fig.height = 50, fig.width = 12 }
+genes.bennet <- intersect(c(rownames(seurat_object)[grep("IL17", rownames(seurat_object))], "TNF", "TNFRSF1A", "IL22", rownames(seurat_object)[grep("IL12", rownames(seurat_object))], "IL23R", "IL23A", "NOS1", "NOS2", "IL13", "IL13RA1"), rownames(seurat_object))
+Idents(seurat_object) <- cell_type
+FeaturePlot(
+  seurat_object, 
+  features = genes.bennet,
+  ncol = 2,
+  order = TRUE, 
+  label = TRUE, 
+  repel = TRUE
+  )
+```
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 7, fig.width = 10}
+DotPlot(seurat_object, features = genes.bennet, group.by = cell_type, dot.scale = 8) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 12)
+  )
+
+```
+
+## Selected ILs/Features in inflammatory celltypes
+
+```{r, echo=FALSE, fig.align = "center",  fig.height = 5, fig.width = 12 }
+DotPlot(seurat_object, features = genes.bennet, group.by = cell_type, dot.scale = 8, idents = inflammatory) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 14)
+  )
+
+```
+
+
+# Interesting interferons (IFNs)
+
+## Interferone (alpha, beta, gamma), TNF-alpha, TGFalpha
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 6 }
+DotPlot(seurat_object, features = c("TNF", "LTA",  "TGFA", "TGFB1"), group.by = cell_type, dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 11 }
+FeaturePlot(
+  seurat_object, 
+  features = c("TNF", "LTA",  "TGFA", "TGFB1"),
+  ncol = 2,
+  order = TRUE, 
+  label = TRUE, 
+  repel = TRUE, 
+  min.cutoff = "q1",
+  max.cutoff = "q99"
+  )
+
+```
+
+
+## All TNFs and TGFs
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 8, fig.width = 15}
+interferons <- c(rownames(seurat_object)[grep("^TNF", rownames(seurat_object))], rownames(seurat_object)[grep("^TGF", rownames(seurat_object))])
+
+DotPlot(seurat_object, features = interferons, group.by = cell_type, dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+
+# S100A1 proteins
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 7, fig.width = 10 }
+DotPlot(seurat_object, features = rownames(seurat_object)[grep("S100A1", rownames(seurat_object))], group.by = cell_type, dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+  )
+```
+
+# *IL-14 (TXLNA)* and *IL-29 (IFNL1)*
+
+## Which cells express *IL-14 (TXLNA)* and *IL-29 (IFNL1)*?
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 5, fig.width = 10 }
+genes.bennet <- c("TXLNA", "IFNL1")
+Idents(seurat_object) <- cell_type
+
+                        FeaturePlot(
+                            seurat_object, 
+                            features = genes.bennet, 
+                            order = TRUE, 
+                            label = TRUE, 
+                            repel = TRUE, 
+                            min.cutoff = "q1", 
+                            max.cutoff = "q99"
+                        ) 
+```
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 5, fig.width = 8 }
+DotPlot(seurat_object, features = genes.bennet, group.by = cell_type, dot.scale = 6) +
+  scale_color_gradient2(high = "red", low = "blue") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, size = 10)
+  )
+
+```
+
+# Marker of *TXLNA*-UP and *IFNL1*-UP cells {.tabset}
+
+## *TXLNA*-UP cells
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 12, fig.width = 10}
+TXLNA_UP <- mean(GetAssayData(object = seurat_object, slot = "data")["TXLNA",])
+sd_TXLNA_UP <- sd(GetAssayData(object = seurat_object, slot = "data")["TXLNA",])
+obj_TXLNA <- subset(x = seurat_object, subset = TXLNA > (TXLNA_UP+sd_TXLNA_UP))
+number_TXLNA_up <- ncol(obj_TXLNA)
+```
+
+Number *TXLNA*-UP cells: `r number_TXLNA_up`
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 12, fig.width = 10}
+if(number_TXLNA_up > 3){
+  
+  seurat_object$TXLNA_expr <- "-"
+  seurat_object$TXLNA_expr[ colnames(obj_TXLNA)] <- "up"
+  Idents(seurat_object) <- "TXLNA_expr"
+  TXLNA_cells_markers <- FindMarkers(object = seurat_object, ident.1 = "up")
+  save(TXLNA_cells_markers, file = here(output_data_path,"TXLNA-cells-markers.RData"))
+  
+  head(TXLNA_cells_markers, 10)
+  
+  TXLNA_coexpr <- head(rownames(TXLNA_cells_markers), 7)[-1]
+  FeaturePlot(
+      seurat_object,
+      features = TXLNA_coexpr,
+      order = TRUE,
+      label = TRUE,
+      repel = TRUE,
+      min.cutoff = "q1",
+      max.cutoff = "q99"
+  )
+
+}
+```
+
+## *IFNL1*-UP cells
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 12, fig.width = 10}
+IFNL1_UP <- mean(GetAssayData(object = seurat_object, slot = "data")["IFNL1",])
+sd_IFNL1_UP <- sd(GetAssayData(object = seurat_object, slot = "data")["IFNL1",])
+obj_IFNL1 <- subset(x = seurat_object, subset = IFNL1 > (IFNL1_UP+sd_IFNL1_UP))
+number_IFNL1_up <- ncol(obj_IFNL1)
+```
+
+Number *IFNL1*-UP cells: `r number_IFNL1_up`
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 12, fig.width = 10 }
+if(number_IFNL1_up > 3){
+  
+  seurat_object$IFNL1_expr <- "-"
+  seurat_object$IFNL1_expr[ colnames(obj_IFNL1)] <- "up"
+  Idents(seurat_object) <- "IFNL1_expr"
+  IFNL1_cells_markers <- FindMarkers(object = seurat_object, ident.1 = "up")
+  save(IFNL1_cells_markers, file = here(output_data_path,"IFNL1-cells-markers.RData"))
+  head(IFNL1_cells_markers, 10)
+  IFNL1_coexpr <- head(rownames(IFNL1_cells_markers), 7)[-1]
+  
+  FeaturePlot(
+      seurat_object,
+      features = IFNL1_coexpr,
+      order = TRUE,
+      label = TRUE,
+      repel = TRUE,
+      min.cutoff = "q1",
+      max.cutoff = "q99"
+  )
+  
+}
+```
+
+# Annotation of Th1 and Th2 subpopulations {.tabset}
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 5, fig.width = 10}
+th_cells <- colnames(seurat_object)[which(seurat_object@meta.data[, cell_type] %in% c("Th", "Tc", "Treg"))]
+tcells_obj <- subset(seurat_object, cells = th_cells)
+
+p1 <- DimPlot(tcells_obj, group.by = cell_type) +
+  ggtitle("Celltypes")
+p2 <-DimPlot(tcells_obj, group.by = "seurat_clusters")+
+  ggtitle("Seurat clusters")
+p3 <-FeaturePlot(
+  tcells_obj,
+  features = 'percent.mt') +
+  ggtitle("Mitochondrial expression")
+
+pw <- p1 + p2 
+pw + plot_annotation(
+  title = 'T-cells UMAP subset',
+  subtitle = 'Subset of the dataset with only Tc, Th and Treg'
+)  
+```
+
+## Th1-marker
+
+https://www.rndsystems.com/resources/cell-markers/immune-cells/helper-t-cells/th1-cell-markers
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 20, fig.width = 10}
+th1_marker <- intersect(c("STAT1", "STAT2", "IFNG", "IL2", "TNF", "CCR1", "CCR5", "CXCR3", "IL12RB2", "IL18R1"), rownames(seurat_object))
+FeaturePlot(
+  tcells_obj,
+  features = th1_marker,
+  ncol = 2,
+  order = TRUE
+  )
+```
+
+## Th2-marker
+
+https://www.rndsystems.com/resources/cell-markers/immune-cells/helper-t-cells/th2-cell-markers
+
+```{r, echo=FALSE, fig.align = "center", fig.height = 30, fig.width = 10}
+th2_marker <- intersect(c("IL4", "IL5", "IL9", "IL10", "IL13", "IL21", "GATA3", "IRF4", "STAT5A", "STAT5B","STAT6", "CCR3", "CCR4", "CCR8", "CXCR4", "IL17RB", "IL4R", "IL33", "TSLP"), rownames(seurat_object))
+FeaturePlot(
+  tcells_obj, 
+  features = th2_marker,
+  ncol = 2,
+  order = TRUE
+  )
+
+```
+
+# Geneset Expression of GS th1-marker and th2-marker
+
+```{r, echo=FALSE, fig.align = "center", fig.height=5, fig.width = 10}
+th1_marker_list <- list(th1_marker)
+tcells_obj <- AddModuleScore(
+  object = tcells_obj,
+  features = th1_marker_list,
+  ctrl = 5,
+  name = 'th1_marker'
+)
+
+th2_marker_list <- list(th2_marker)
+tcells_obj <- AddModuleScore(
+  object = tcells_obj,
+  features = th2_marker_list,
+  ctrl = 5,
+  name = 'th2_marker'
+)
+
+pw <- FeaturePlot(
+  tcells_obj,
+  features = c('th1_marker1', 'th2_marker1'),
+  ncol = 2,
+  order = TRUE, 
+  min.cutoff = "q1",
+  max.cutoff = "q99"
+  )
+
+pw
+```

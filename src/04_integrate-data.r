@@ -1,7 +1,12 @@
 ### integrating good quality data sets
 ### 20.05.22
+
+# load packages and source code -------------------------------------------
+
+pacman::p_load(Seurat, tidyverse, clustree)
+source(here("src","seurat-functions.r"))
+source(here("src","paths.r"))
 source(here("src", "make-nicknames-for-celltypes.r"))
-library(clustree)
 
 n_dims_use <- 30
 
